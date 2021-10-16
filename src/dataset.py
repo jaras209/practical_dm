@@ -1,7 +1,8 @@
 import json
 import pandas as pd
-import csv
 import os
+import numpy as np
+import re
 
 
 def inspect_data(dialogues: str, acts: str):
@@ -136,4 +137,96 @@ def extract_data(dialogue_dir: str, acts: str):
                     })
                     data.append(row)
 
-    pd.DataFrame(data).to_csv('../data/data.csv')
+    return data
+
+
+class Dataset:
+    PAD, UNK = 0, 1
+
+    # Functions for mapping words and system_actions names into integers
+    def words2int(self, utterance):
+        output = []
+        for word in utterance:
+            output.append(self.word2int_vocabulary.get(word, Dataset.UNK))
+
+        return output
+
+    def actions2int(self, actions):
+        output = []
+        for action in actions:
+            output.append(self.actions2int_vocabulary.get(action, 0))
+
+        return output
+
+    def ints2words(self, utterance):
+        output = []
+        for word in utterance:
+            output.append(self.int2word_vocabulary.get(word, '<UNK>'))
+
+        return output
+
+    def ints2actions(self, actions):
+        output = []
+        for action in actions:
+            output.append(self.int2action_vocabulary.get(action, '<UNK_ACT>'))
+
+        return output
+
+    # TODO: ještě bychom tedy měli mít nějakou historii, ta se musí tedy nejdřív také vytvořit a přidat jako do
+    #  každého row, ale to se musí vytvořit někde při čtení dat, když se prochází daný jeden dialog, tak tam. Jinde
+    #  to nejde, protože nevíme, které věty patří do jednoho dialogu.
+    def create_dataset(self, data, num_actions: int):
+        size = len(data)
+        max_len = max(len(row['user_utterance']) for row in data)
+        utterances = np.zeros((size, max_len), np.int32)
+        actions = np.zeros((size, num_actions), np.int32)
+        for i, row in enumerate(data):
+            utt = self.words2int(row['user_utterance'])
+            act = self.actions2int(row['system_actions'])
+            actions[i, act] = 1
+            utterances[i, :len(utt)] = utt
+
+        return utterances, actions
+
+    def __init__(self, train_folder, val_folder, test_folder, actions_file, save_folder=None):
+        # Load the data
+        train_data = extract_data(train_folder, actions_file)
+        val_data = extract_data(val_folder, actions_file)
+        test_data = extract_data(test_folder, actions_file)
+
+        # TODO: určite je zapotřebí vyhledávat v utterancích entity a ty mapovat na nějaké placeholdery, např. čas,
+        #  jména atd.
+
+        self.word2int_vocabulary = {'<PAD>': Dataset.PAD, '<UNK>': Dataset.UNK}
+        i = 2
+        for row in train_data:
+            utterance = re.sub(r'[^\w\s]', '', row['user_utterance']).split()
+            for word in utterance:
+                if word not in self.word2int_vocabulary.keys():
+                    self.word2int_vocabulary[word] = i
+                    i += 1
+
+        self.int2word_vocabulary = {v: k for k, v in self.word2int_vocabulary.items()}
+
+        # Create map from system_actions names into integers
+        unique_actions = sorted(list(set([action for row in train_data for action in row['system_actions']])))
+        num_actions = len(unique_actions)
+        self.actions2int_vocabulary = {v: k for k, v in enumerate(unique_actions)}
+        self.int2action_vocabulary = {v: k for k, v in self.actions2int_vocabulary.items()}
+
+        # Save dictionaries into a folder for later reuse.
+        if save_folder is not None:
+            if not os.path.exists(save_folder):
+                os.makedirs(save_folder)
+
+            with open(f'{save_folder}/word2int_vocabulary.json', 'w') as f:
+                json.dump(self.word2int_vocabulary, f, indent=2)
+
+            with open(f'{save_folder}/actions2int_vocabulary.json', 'w') as f:
+                json.dump(self.actions2int_vocabulary, f, indent=2)
+
+        # Create train, val and test data
+        self.train_utt, self.train_act = self.create_dataset(train_data, num_actions)
+        self.val_utt, self.val_act = self.create_dataset(val_data, num_actions)
+        self.test_utt, self.test_act = self.create_dataset(test_data, num_actions)
+
