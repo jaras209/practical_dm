@@ -115,7 +115,7 @@ def extract_data(dialogue_dir: str, acts: str):
             turns = dialogue['turns']
             dialogue_id = dialogue['dialogue_id']
             for i, turn in enumerate(turns):
-                utterance = turn['utterance']
+                utterance = re.sub(r'[^\w\s]', '', turn['utterance']).split()
                 turn_id = turn['turn_id']
                 speaker = turn['speaker']
                 actions = acts[dialogue_id][f'{i}']['dialog_act']
@@ -144,9 +144,9 @@ class Dataset:
     PAD, UNK = 0, 1
 
     # Functions for mapping words and system_actions names into integers
-    def words2int(self, utterance):
+    def words2int(self, words):
         output = []
-        for word in utterance:
+        for word in words:
             output.append(self.word2int_vocabulary.get(word, Dataset.UNK))
 
         return output
@@ -158,16 +158,17 @@ class Dataset:
 
         return output
 
-    def ints2words(self, utterance):
+    def ints2words(self, ints):
         output = []
-        for word in utterance:
+        for word in ints:
             output.append(self.int2word_vocabulary.get(word, '<UNK>'))
 
         return output
 
     def ints2actions(self, actions):
         output = []
-        for action in actions:
+        actions_indices = np.nonzero(actions)[0]
+        for action in actions_indices:
             output.append(self.int2action_vocabulary.get(action, '<UNK_ACT>'))
 
         return output
@@ -200,8 +201,7 @@ class Dataset:
         self.word2int_vocabulary = {'<PAD>': Dataset.PAD, '<UNK>': Dataset.UNK}
         i = 2
         for row in train_data:
-            utterance = re.sub(r'[^\w\s]', '', row['user_utterance']).split()
-            for word in utterance:
+            for word in row['user_utterance']:
                 if word not in self.word2int_vocabulary.keys():
                     self.word2int_vocabulary[word] = i
                     i += 1
