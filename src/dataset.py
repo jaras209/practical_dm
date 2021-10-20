@@ -114,6 +114,7 @@ def extract_data(dialogue_dir: str, acts: str):
         for dialogue in dialogues:
             turns = dialogue['turns']
             dialogue_id = dialogue['dialogue_id']
+            history = []
             for i, turn in enumerate(turns):
                 utterance = re.sub(r'[^\w\s]', '', turn['utterance']).split()
                 turn_id = turn['turn_id']
@@ -133,10 +134,11 @@ def extract_data(dialogue_dir: str, acts: str):
 
                     row.update({
                         'system_utterance': utterance,
-                        'system_actions': act_name_slot_pairs
+                        'system_actions': act_name_slot_pairs,
+                        'history': history.copy(),
                     })
                     data.append(row)
-
+                    history += row['user_utterance'] + row['system_utterance']
     return data
 
 
@@ -173,21 +175,22 @@ class Dataset:
 
         return output
 
-    # TODO: ještě bychom tedy měli mít nějakou historii, ta se musí tedy nejdřív také vytvořit a přidat jako do
-    #  každého row, ale to se musí vytvořit někde při čtení dat, když se prochází daný jeden dialog, tak tam. Jinde
-    #  to nejde, protože nevíme, které věty patří do jednoho dialogu.
     def create_dataset(self, data, num_actions: int):
         size = len(data)
-        max_len = max(len(row['user_utterance']) for row in data)
-        utterances = np.zeros((size, max_len), np.int32)
+        max_utt_len = max(len(row['user_utterance']) for row in data)
+        max_hist_len = max(len(row['history']) for row in data)
+        utterances = np.zeros((size, max_utt_len), np.int32)
         actions = np.zeros((size, num_actions), np.int32)
+        history = np.zeros((size, max_hist_len), np.int32)
         for i, row in enumerate(data):
-            utt = self.words2int(row['user_utterance'])
-            act = self.actions2int(row['system_actions'])
-            actions[i, act] = 1
-            utterances[i, :len(utt)] = utt
+            u = self.words2int(row['user_utterance'])
+            a = self.actions2int(row['system_actions'])
+            h = self.words2int(row['history'])
+            actions[i, a] = 1
+            utterances[i, :len(u)] = u
+            history[i, :len(h)] = h
 
-        return utterances, actions
+        return utterances, actions, history
 
     def __init__(self, train_folder, val_folder, test_folder, actions_file, save_folder=None):
         # Load the data
@@ -201,16 +204,17 @@ class Dataset:
         self.word2int_vocabulary = {'<PAD>': Dataset.PAD, '<UNK>': Dataset.UNK}
         i = 2
         for row in train_data:
-            for word in row['user_utterance']:
+            for word in row['user_utterance'] + row['system_utterance']:
                 if word not in self.word2int_vocabulary.keys():
                     self.word2int_vocabulary[word] = i
                     i += 1
 
+        self.num_words = len(self.word2int_vocabulary)
         self.int2word_vocabulary = {v: k for k, v in self.word2int_vocabulary.items()}
 
         # Create map from system_actions names into integers
         unique_actions = sorted(list(set([action for row in train_data for action in row['system_actions']])))
-        num_actions = len(unique_actions)
+        self.num_actions = len(unique_actions)
         self.actions2int_vocabulary = {v: k for k, v in enumerate(unique_actions)}
         self.int2action_vocabulary = {v: k for k, v in self.actions2int_vocabulary.items()}
 
@@ -226,7 +230,7 @@ class Dataset:
                 json.dump(self.actions2int_vocabulary, f, indent=2)
 
         # Create train, val and test data
-        self.train_utt, self.train_act = self.create_dataset(train_data, num_actions)
-        self.val_utt, self.val_act = self.create_dataset(val_data, num_actions)
-        self.test_utt, self.test_act = self.create_dataset(test_data, num_actions)
+        self.train_utterances, self.train_actions, self.train_history = self.create_dataset(train_data, self.num_actions)
+        self.val_utterances, self.val_actions, self.val_history = self.create_dataset(val_data, self.num_actions)
+        self.test_utterances, self.test_actions, self.test_history = self.create_dataset(test_data, self.num_actions)
 
