@@ -22,6 +22,7 @@ parser.set_defaults(train_model=True)
 args = parser.parse_args([] if "__file__" not in globals() else None)
 
 
+# f_1
 def f1_metrics(y_true, y_pred):  # shapes (batch, actions)
     predLabels = K.argmax(y_pred, axis=-1)
     y_pred = tf.cast(K.one_hot(predLabels, 247), tf.float32)
