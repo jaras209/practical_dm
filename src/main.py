@@ -1,12 +1,20 @@
-import dataset
-import model
+import torch
+from dataset_torch import DialogDataset, DialogDataLoader
+from pathlib import Path
 
 if __name__ == '__main__':
-    dataset = dataset.Dataset(train_folder='../data/train', val_folder='../data/val', test_folder='../data/test',
-                              actions_file='../data/dialog_acts.json')
+    train = DialogDataset(dataset_type='train', k=10)
+    # val = DialogDataset(dataset_type='val', k=10)
+    # test = DialogDataset(dataset_type='test', k=10)
 
-    print(f'{dataset.num_actions=}')
+    train_loader = DialogDataLoader(train, batch_size=3, batch_first=True)
 
-    # model.main(dataset)
+    i = 0
+    for batch in train_loader:
+        print(batch)
+        print(train_loader.to_string(batch))
+        i += 1
+        if i >= 3:
+            break
 
 
