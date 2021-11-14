@@ -5,6 +5,9 @@ import numpy as np
 import re
 
 
+DOMAIN_NAMES = ['Restaurant', 'Attraction', 'Hotel', 'Taxi', 'Train', 'Bus', 'Hospital', 'Police']
+
+
 def inspect_data(dialogues: str, acts: str):
     with open(dialogues, 'r') as file:
         dialogues = json.load(file)
@@ -100,7 +103,7 @@ def inspect_data(dialogues: str, acts: str):
             print(slot, file=file)
 
 
-def extract_data(dialogue_dir: str, acts: str):
+def extract_data(dialogue_dir: str, acts: str, strip_domain: bool = False):
     dialogue_files = os.listdir(dialogue_dir)
     data = []
     with open(acts, 'r') as file:
@@ -127,6 +130,8 @@ def extract_data(dialogue_dir: str, acts: str):
                 else:
                     act_name_slot_pairs = []
                     for act_name, values in actions.items():
+                        if strip_domain:
+                            act_name = '-'.join([x for x in act_name.split('-') if x not in DOMAIN_NAMES])
                         for slot_value_pair in values:
                             slot, _ = slot_value_pair
                             act_name_slot_pairs.append(f'{act_name}{"-" if slot != "none" else ""}'
@@ -192,11 +197,11 @@ class Dataset:
 
         return utterances, actions, history
 
-    def __init__(self, train_folder, val_folder, test_folder, actions_file, save_folder=None):
+    def __init__(self, train_folder, val_folder, test_folder, actions_file, strip_domain=True, save_folder=None):
         # Load the data
-        train_data = extract_data(train_folder, actions_file)
-        val_data = extract_data(val_folder, actions_file)
-        test_data = extract_data(test_folder, actions_file)
+        train_data = extract_data(train_folder, actions_file, strip_domain=strip_domain)
+        val_data = extract_data(val_folder, actions_file, strip_domain=strip_domain)
+        test_data = extract_data(test_folder, actions_file, strip_domain=strip_domain)
 
         # TODO: určite je zapotřebí vyhledávat v utterancích entity a ty mapovat na nějaké placeholdery, např. čas,
         #  jména atd.

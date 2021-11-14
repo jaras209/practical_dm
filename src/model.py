@@ -25,7 +25,7 @@ args = parser.parse_args([] if "__file__" not in globals() else None)
 # f_1
 def f1_metrics(y_true, y_pred):  # shapes (batch, actions)
     predLabels = K.argmax(y_pred, axis=-1)
-    y_pred = tf.cast(K.one_hot(predLabels, 247), tf.float32)
+    y_pred = tf.cast(K.one_hot(predLabels, 153), tf.float32)
     y_true = tf.cast(y_true, tf.float32)
 
     ground_positives = tf.reduce_sum(y_true, axis=0) + K.epsilon()  # = TP + FN
@@ -88,7 +88,7 @@ def run_model(dataset: Dataset, emb_dim, rnn_dim, batch_size, epochs):
     actions = tf.keras.layers.Dense(units=dataset.num_actions, activation=tf.nn.sigmoid)(inner_rnn)
 
     model = tf.keras.Model(inputs=[utterance_input, history_input], outputs=actions)
-    model.compile(optimizer=tf.keras.optimizers.Adam(), loss=f1_loss, metrics=[f1_metrics])
+    model.compile(optimizer=tf.keras.optimizers.Adam(), loss=f1_loss, metrics=[f1_metrics, tf.keras.metrics.BinaryAccuracy()])
     model.summary()
 
     training_history = model.fit([dataset.train_utterances, dataset.train_history], dataset.train_actions,
