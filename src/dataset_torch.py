@@ -5,7 +5,6 @@ from torch.utils.data import Dataset, DataLoader, Sampler
 from pathlib import Path
 from transformers import GPT2Tokenizer
 import numpy as np
-from torch.utils.data.dataset import T_co
 
 
 DOMAIN_NAMES = ['Restaurant', 'Attraction', 'Hotel', 'Taxi', 'Train', 'Bus', 'Hospital', 'Police']
@@ -18,7 +17,7 @@ class DialogDataset(Dataset):
     Class to load and store Dialog dataset.
     """
 
-    def __init__(self, dataset_type: str, k: int, dataset_dir: str = '../data'):
+    def __init__(self, dataset_type: str, k: int, dataset_dir: str = '../data', domains: list = None):
         """
         Load the dataset.
 
@@ -33,7 +32,7 @@ class DialogDataset(Dataset):
 
         self.dataset_type = dataset_type
         self.k = k
-        self.data = self.extract_data(dataset_dir, dataset_type)
+        self.data = self.extract_data(dataset_dir, dataset_type, domains)
 
     def __len__(self):
         return len(self.data)
@@ -41,12 +40,13 @@ class DialogDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    def extract_data(self, dataset_dir: str, dataset_type: str, strip_domain: bool = False) -> list[dict]:
+    def extract_data(self, dataset_dir: str, dataset_type: str, domains: list, strip_domain: bool = False) -> list[dict]:
         """
         Loads data from the specified directory.
 
         :param dataset_dir: dataset directory
         :param dataset_type: specify dataset type - `train`, `validation` or `test`
+        :param domains:
         :param strip_domain:
         :return: list of dataset examples, where each example is a dictionary of the following structure:
             `{  'user_utterance': str,       # the string with the current user response
@@ -73,6 +73,9 @@ class DialogDataset(Dataset):
             for dialogue in dialogues:
                 turns = dialogue['turns']
                 dialogue_id = dialogue['dialogue_id']
+                if domains is not None and not set(dialogue['services']).issubset(set(domains)):
+                    continue
+
                 context = []
                 for i, turn in enumerate(turns):
                     utterance = turn['utterance']

@@ -18,6 +18,7 @@ def inspect_data(dialogues: str, acts: str):
     # 1. list index: dialogue
     dialogue = dialogues[0]
     # 2. dict index: dialogue information,
+    #   'services' gets a list of strings with domains
     #   'turns' gets a list of dialogue turns
     #   'dialogue_id' gets dialogue ID for actions
     turns = dialogue['turns']

@@ -3,7 +3,7 @@ from dataset_torch import DialogDataset, DialogDataLoader
 from pathlib import Path
 
 if __name__ == '__main__':
-    train = DialogDataset(dataset_type='train', k=10)
+    train = DialogDataset(dataset_type='train', k=10, domains=['restaurant', 'hotel'])
     # val = DialogDataset(dataset_type='val', k=10)
     # test = DialogDataset(dataset_type='test', k=10)
 
