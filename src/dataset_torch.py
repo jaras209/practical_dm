@@ -40,7 +40,7 @@ class DialogDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    def extract_data(self, dataset_dir: str, dataset_type: str, domains: list, strip_domain: bool = False) -> list[dict]:
+    def extract_data(self, dataset_dir: str, dataset_type: str, domains: list = None, strip_domain: bool = False) -> list[dict]:
         """
         Loads data from the specified directory.
 
@@ -187,7 +187,7 @@ class DialogDataLoader(DataLoader):
             return bucket_id
 
     def __init__(self, dataset: DialogDataset, action_map: dict = None, batch_size=64, num_buckets=100,
-                 batch_first=False):
+                 batch_first=True):
         """
         Create DataLoader.
 
@@ -196,25 +196,26 @@ class DialogDataLoader(DataLoader):
         :param num_buckets: number of buckets to use for splitting dataset examples by their length
             (len(utterance) + len(context) is used)
         """
+        self.dataset = dataset
         self.batch_sampler = self.BatchSampler(dataset, num_buckets=num_buckets, batch_size=batch_size)
         self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
         self.batch_first = batch_first
 
         if action_map is None:
             unique_actions = sorted(list(set([action for example in dataset for action in example['system_actions']])))
-            self._action_to_ids = {v: k for k, v in enumerate(unique_actions)}
+            self.action_to_ids = {v: k for k, v in enumerate(unique_actions)}
         else:
-            self._action_to_ids = action_map
+            self.action_to_ids = action_map
 
-        self._ids_to_action = {v: k for k, v in self._action_to_ids.items()}
-        self.num_actions = len(self._action_to_ids)
+        self.ids_to_action = {v: k for k, v in self.action_to_ids.items()}
+        self.num_actions = len(self.action_to_ids)
 
         super().__init__(dataset, batch_sampler=self.batch_sampler, collate_fn=self.collate_fn)
 
     def convert_actions_to_ids(self, actions):
         output = []
         for action in actions:
-            output.append(self._action_to_ids.get(action, 0))
+            output.append(self.action_to_ids.get(action, 0))
 
         return output
 
@@ -222,7 +223,7 @@ class DialogDataLoader(DataLoader):
         output = []
         actions_indices = np.nonzero(actions)
         for action in actions_indices:
-            output.append(self._ids_to_action.get(action.item(), '<UNK_ACT>'))
+            output.append(self.ids_to_action.get(action.item(), '<UNK_ACT>'))
 
         return output
 
@@ -248,7 +249,7 @@ class DialogDataLoader(DataLoader):
             system_utt_ = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(example['system_utterance']))
             action_ = self.convert_actions_to_ids(example['system_actions'])
             context_ = self.tokenizer.convert_tokens_to_ids(
-                self.tokenizer.tokenize('<|endoftext|>'.join(example['context'])))
+                self.tokenizer.tokenize('<|endoftext|>'.join(example['context']) + '<|endoftext|>'))
 
             user_utterances.append(torch.tensor(user_utt_, dtype=torch.int64))
             system_utterances.append(torch.tensor(system_utt_, dtype=torch.int64))
