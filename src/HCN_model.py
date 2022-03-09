@@ -1,5 +1,8 @@
 import argparse
-from dataset_torch import DialogDataset, DialogDataLoader
+
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+from HCN_dataset import DialogDataset, DialogDataLoader
 import torch
 from torch import nn
 import numpy as np
@@ -7,9 +10,9 @@ import numpy as np
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
 parser.add_argument("--embedding_size", default=256, type=int, help="Character embedding dimension.")
-parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
-parser.add_argument("--hidden_size", default=512, type=int, help="RNN cell dimension.")
-parser.add_argument("--pos_weight", default=10, type=int, help="Weight of positive examples in BCE loss.")
+parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
+parser.add_argument("--hidden_size", default=256, type=int, help="RNN cell dimension.")
+parser.add_argument("--pos_actions", default=2, type=int, help="Weight of positive examples in BCE loss.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--save_folder", default="save_folder", type=str,
                     help="Name of the folder where to save the model or where to load it from")
@@ -17,7 +20,6 @@ parser.add_argument('--train', dest='train_model', action='store_true')
 parser.add_argument('--test', dest='train_model', action='store_false')
 parser.set_defaults(train_model=True)
 args = parser.parse_args([] if "__file__" not in globals() else None)
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -68,7 +70,7 @@ class NeuralNetwork(nn.Module):
 
 
 def train(dataloader: DialogDataLoader, model: NeuralNetwork, loss_fn, optimizer):
-    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
     model.train()
     for num_batch, batch in enumerate(dataloader):
         user_utterance = batch['user_utterance'].to(device)
@@ -86,26 +88,56 @@ def train(dataloader: DialogDataLoader, model: NeuralNetwork, loss_fn, optimizer
 
         if num_batch % 100 == 0:
             loss, current = loss.item(), num_batch * len(user_utterance)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            print(f"loss: {loss:>7f}  [{current:>5d}/{num_batches:>5d}]")
+
+
+# Use threshold to define predicted labels and invoke sklearn metrics with different averaging strategies.
+def calculate_metrics(pred, target, threshold=0.5):
+    pred = np.array(pred > threshold, dtype=float)
+    return {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro'),
+            'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro'),
+            'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro'),
+            'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro'),
+            'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro'),
+            'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro'),
+            'samples/precision': precision_score(y_true=target, y_pred=pred, average='samples'),
+            'samples/recall': recall_score(y_true=target, y_pred=pred, average='samples'),
+            'samples/f1': f1_score(y_true=target, y_pred=pred, average='samples'),
+            }
 
 
 def test(dataloader: DialogDataLoader, model: NeuralNetwork, loss_fn):
-    size = len(dataloader.dataset)
     num_batches = len(dataloader)
     model.eval()
     test_loss, correct = 0, 0
     with torch.no_grad():
+        model_results = []
+        targets = []
         for batch in dataloader:
             user_utterance = batch['user_utterance'].to(device)
             context = batch['context'].to(device)
             system_actions = batch['system_actions'].to(device)
 
             logits, probabilities = model(user_utterance, context)
+
             test_loss += loss_fn(logits, system_actions.float()).item()
-            correct += (torch.round(probabilities) == system_actions).type(torch.float).sum().item()
+            correct += torch.all(torch.round(probabilities) == system_actions, dim=1).float().sum().item()
+
+            model_results.extend(probabilities.cpu().numpy())
+            targets.extend(system_actions.cpu().numpy())
+
+    result = calculate_metrics(np.array(model_results), np.array(targets))
+    print("Test metrics:"
+          "\tmicro f1: {:.3f} "
+          "\tmacro f1: {:.3f} "
+          "\tsamples f1: {:.3f}".format(result['micro/f1'],
+                                        result['macro/f1'],
+                                        result['samples/f1']))
+
     test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    correct /= num_batches
+    print(f"\taccuracy: {(100 * correct):>0.1f}%, "
+          f"\tavg loss: {test_loss:>8f} \n")
 
 
 def main():
@@ -120,19 +152,21 @@ def main():
     num_actions = train_dataloader.num_actions
     vocab_size = train_dataloader.tokenizer.vocab_size
 
+    print(f'{num_actions=}, {vocab_size=}, {len(train_data)=}')
+
     val_dataloader = DialogDataLoader(val_data, action_map=action_map, batch_size=args.batch_size, batch_first=True)
 
     model = NeuralNetwork(vocabulary_size=vocab_size, hidden_size=args.hidden_size, embedding_size=args.embedding_size,
                           num_actions=num_actions, bidirectional=True, batch_first=True).to(device)
     print(model)
-
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=args.pos_weight * torch.ones(num_actions))
+    pos_weight = num_actions / args.pos_actions
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight * torch.ones(num_actions)).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
 
     epochs = args.epochs
     for t in range(epochs):
         print(f"Epoch {t + 1}\n-------------------------------")
         train(train_dataloader, model, loss_fn, optimizer)
+        test(train_dataloader, model, loss_fn)
         test(val_dataloader, model, loss_fn)
     print("Done!")
-

@@ -11,13 +11,17 @@ DOMAIN_NAMES = ['Restaurant', 'Attraction', 'Hotel', 'Taxi', 'Train', 'Bus', 'Ho
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use 'HCN/data'.
+DATASET_DIR = '/home/safar/HCN/data'
+# DATASET_DIR = '../data'
+
 
 class DialogDataset(Dataset):
     """
     Class to load and store Dialog dataset.
     """
 
-    def __init__(self, dataset_type: str, k: int, dataset_dir: str = '../data', domains: list = None):
+    def __init__(self, dataset_type: str, k: int, dataset_dir: str = DATASET_DIR, domains: list = None):
         """
         Load the dataset.
 
@@ -32,7 +36,7 @@ class DialogDataset(Dataset):
 
         self.dataset_type = dataset_type
         self.k = k
-        self.data = self.extract_data(dataset_dir, dataset_type, domains)
+        self.data = self.extract_data(dataset_dir, dataset_type, domains, strip_domain=True)
 
     def __len__(self):
         return len(self.data)
@@ -137,6 +141,9 @@ class DialogDataLoader(DataLoader):
             np.random.seed(seed)
             self.dataset = dataset
             self.batch_size = batch_size
+
+            print(f'{self.batch_size=}')
+
             self.index_and_length = []
             self.max_len = -1
 
@@ -171,7 +178,9 @@ class DialogDataLoader(DataLoader):
             batches = []
             for bucket in buckets.values():
                 np.random.shuffle(bucket)
-                batches += [bucket[i:i + self.batch_size] for i in range(0, len(bucket), self.batch_size)]
+                # batches += [bucket[i:i + self.batch_size] for i in range(0, len(bucket), self.batch_size)]
+                for i in range(0, len(bucket), self.batch_size):
+                    batches.append(bucket[i:i + self.batch_size])
 
             np.random.shuffle(batches)
             for batch_idxs in batches:
@@ -186,7 +195,7 @@ class DialogDataLoader(DataLoader):
             bucket_id = np.min(np.where(buckets_mask))
             return bucket_id
 
-    def __init__(self, dataset: DialogDataset, action_map: dict = None, batch_size=64, num_buckets=100,
+    def __init__(self, dataset: DialogDataset, action_map: dict = None, batch_size=64, num_buckets=20,
                  batch_first=True):
         """
         Create DataLoader.
