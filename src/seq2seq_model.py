@@ -1,7 +1,5 @@
 import argparse
 
-from sklearn.metrics import precision_score, recall_score, f1_score
-
 from seq2seq_dataset import DialogDataset, DialogDataLoader
 import torch
 from torch import nn
@@ -305,28 +303,15 @@ def train(dataloader: DialogDataLoader, model: Seq2Seq, optimizer):
             print(f"loss: {loss:>7f}  [{current:>5d}/{num_batches:>5d}]")
 
 
-# Use threshold to define predicted labels and invoke sklearn metrics with different averaging strategies.
-def calculate_metrics(pred, target, threshold=0.5):
-    pred = np.array(pred > threshold, dtype=float)
-    return {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro'),
-            'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro'),
-            'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro'),
-            'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro'),
-            'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro'),
-            'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro'),
-            'samples/precision': precision_score(y_true=target, y_pred=pred, average='samples'),
-            'samples/recall': recall_score(y_true=target, y_pred=pred, average='samples'),
-            'samples/f1': f1_score(y_true=target, y_pred=pred, average='samples'),
-            }
-
-
 def test(dataloader: DialogDataLoader, model: Seq2Seq):
     num_batches = len(dataloader)
+    num_actions = dataloader.num_actions
     model.eval()
-    test_loss, correct = 0, 0
+    test_loss = 0
+    correct_count = {a: 0 for a in range(num_actions)}
+    target_count = {a: 0 for a in range(num_actions)}
+    output_count = {a: 0 for a in range(num_actions)}
     with torch.no_grad():
-        model_results = []
-        targets = []
         for batch in dataloader:
             user_utterance = batch['user_utterance'].to(device)
             context = batch['context'].to(device)
@@ -338,28 +323,24 @@ def test(dataloader: DialogDataLoader, model: Seq2Seq):
             # TODO: možná dát system_actions.float()
             test_loss += compute_loss(logits, system_actions).item()
 
-            # correct += torch.all(torch.round(probabilities) == system_actions, dim=1).float().sum().item()
-            # TODO: přidat výpočet accuracy. Asi něco jako set z targetů a outputů a jejich porovnání na rovnost
+            for a in range(num_actions):
+                system_action_a = (system_actions == a).any(dim=1)
+                output_action_a = (outputs == a).any(dim=1)
+                target_count[a] += torch.sum(system_action_a).float().item()
+                output_count[a] += torch.sum(output_action_a).float().item()
+                correct_count[a] += torch.sum(system_action_a * output_action_a).float().item()
 
-    """
-            model_results.extend(probabilities.cpu().numpy())
-            targets.extend(system_actions.cpu().numpy())
+    recall = {a: correct_count[a] / target_count[a] if target_count[a] > 0 else 0 for a in range(num_actions)}
+    precision = {a: correct_count[a] / output_count[a] if output_count[a] > 0 else 0 for a in range(num_actions)}
+    f1_score = {a: 2 * precision[a] * recall[a] / (precision[a] + recall[a]) if (precision[a] + recall[a]) > 0 else
+                0 for a in range(num_actions)}
 
-    result = calculate_metrics(np.array(model_results), np.array(targets))
-    print("Test metrics:"
-          "\tmicro f1: {:.3f} "
-          "\tmacro f1: {:.3f} "
-          "\tsamples f1: {:.3f}".format(result['micro/f1'],
-                                        result['macro/f1'],
-                                        result['samples/f1']))
-    """
     test_loss /= num_batches
-    """
-    correct /= num_batches
-    print(f"\taccuracy: {(100 * correct):>0.1f}%, "
-          f"\tavg loss: {test_loss:>8f} \n")
-    """
+
     print(f"\tavg loss: {test_loss:>8f} \n")
+    print(f"recall=\n{recall}")
+    print(f"precision=\n{precision}")
+    print(f"f1_score=\n{f1_score}")
 
 
 def main():
@@ -393,6 +374,8 @@ def main():
     for t in range(epochs):
         print(f"Epoch {t + 1}\n-------------------------------")
         train(train_dataloader, model, optimizer)
+        print("Test on train:")
         test(train_dataloader, model)
+        print("Test on val:")
         test(val_dataloader, model)
     print("Done!")
