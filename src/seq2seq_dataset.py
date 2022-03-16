@@ -223,10 +223,13 @@ class DialogDataLoader(DataLoader):
 
         super().__init__(dataset, batch_sampler=self.batch_sampler, collate_fn=self.collate_fn)
 
-    def convert_actions_to_ids(self, actions):
+    def convert_actions_to_ids(self, actions, sort: bool = True):
         output = []
         for action in actions:
             output.append(self.action_to_ids.get(action, UNK))
+
+        if sort:
+            output.sort()
 
         output.append(self.action_to_ids.get('<EOS>'))
         return output
