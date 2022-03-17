@@ -139,7 +139,7 @@ class Decoder(nn.Module):
         """
 
         :param input_action: actions on the input of the Decoder, shape: (batch_size, 1), because we are sending on the
-            input only one token at the time
+            input only one input action at the time
         :param hidden: hidden states of the Decoder, shape: (batch_size, self.num_directions * hidden_size)
         :param encoder_utterance_output: tensor of the utterance hidden states from the encoder at each timestep,
             shape: (batch_size, utt_seq_len, self.num_directions * hidden_size)

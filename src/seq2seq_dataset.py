@@ -13,8 +13,8 @@ PAD, UNK, SOS, EOS = 0, 1, 2, 3
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use 'HCN/data'.
-# DATASET_DIR = '/home/safar/HCN/data'
-DATASET_DIR = '../data'
+DATASET_DIR = '/home/safar/HCN/data'
+# DATASET_DIR = '../data'
 
 
 class DialogDataset(Dataset):
