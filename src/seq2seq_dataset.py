@@ -12,7 +12,7 @@ PAD, UNK, SOS, EOS = 0, 1, 2, 3
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use 'HCN/data'.
+# TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use '../data'.
 DATASET_DIR = '/home/safar/HCN/data'
 # DATASET_DIR = '../data'
 
@@ -31,9 +31,11 @@ class DialogDataset(Dataset):
         :param dataset_dir: directory of the dataset
         """
 
+        """
         assert dataset_type in ['train', 'val', 'test'], \
             AssertionError(f'Wrong dataset_type \'{dataset_type}\'! Only acceptable dataset_type is \'train\', '
                            f'\'val\' or \'test\'.')
+        """
 
         self.dataset_type = dataset_type
         self.k = k
@@ -62,6 +64,7 @@ class DialogDataset(Dataset):
         """
         dataset_path = Path(dataset_dir) / dataset_type
         acts_path = Path(dataset_dir) / 'dialog_acts.json'
+        # acts_path = Path(dataset_dir) / 'dummy_acts.json'
         dialogue_files = sorted(dataset_path.iterdir())
 
         # List to store the examples
@@ -234,8 +237,9 @@ class DialogDataLoader(DataLoader):
         output.append(self.action_to_ids.get('<EOS>'))
         return output
 
-    def convert_ids_to_actions(self, actions):
+    def convert_ids_to_actions(self, actions: torch.Tensor):
         output = []
+        actions = actions.tolist()
         for action in actions:
             output.append(self.ids_to_action.get(action, '<UNK>'))
 

@@ -1,6 +1,7 @@
 import argparse
 
 from seq2seq_dataset import DialogDataset, DialogDataLoader
+from pathlib import Path
 import torch
 from torch import nn
 import numpy as np
@@ -9,12 +10,11 @@ from seq2seq_dataset import PAD, UNK, SOS, EOS
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
 parser.add_argument("--token_embedding_size", default=256, type=int, help="Token embedding dimension.")
-parser.add_argument("--action_embedding_size", default=64, type=int, help="Action embedding dimension.")
-parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
+parser.add_argument("--action_embedding_size", default=128, type=int, help="Action embedding dimension.")
+parser.add_argument("--epochs", default=500, type=int, help="Number of epochs.")
 parser.add_argument("--hidden_size", default=256, type=int, help="RNN cell dimension.")
-parser.add_argument("--pos_actions", default=2, type=int, help="Weight of positive examples in BCE loss.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--save_folder", default="save_folder", type=str,
+parser.add_argument("--save_folder", default="/home/safar/HCN/models", type=str,
                     help="Name of the folder where to save the model or where to load it from")
 parser.add_argument('--train', dest='train_model', action='store_true')
 parser.add_argument('--test', dest='train_model', action='store_false')
@@ -330,10 +330,20 @@ def test(dataloader: DialogDataLoader, model: Seq2Seq):
                 output_count[a] += torch.sum(output_action_a).float().item()
                 correct_count[a] += torch.sum(system_action_a * output_action_a).float().item()
 
+            # print(dataloader.to_string(batch))
+            # for o in outputs:
+            #     print(dataloader.convert_ids_to_actions(o))
+
     recall = {a: correct_count[a] / target_count[a] if target_count[a] > 0 else 0 for a in range(num_actions)}
     precision = {a: correct_count[a] / output_count[a] if output_count[a] > 0 else 0 for a in range(num_actions)}
     f1_score = {a: 2 * precision[a] * recall[a] / (precision[a] + recall[a]) if (precision[a] + recall[a]) > 0 else
                 0 for a in range(num_actions)}
+
+    average_f1 = np.mean([v for a, v in f1_score.items() if a not in [PAD, UNK, SOS, EOS]])
+
+    recall = {dataloader.ids_to_action[a]: v for a, v in recall.items()}
+    precision = {dataloader.ids_to_action[a]: v for a, v in precision.items()}
+    f1_score = {dataloader.ids_to_action[a]: v for a, v in f1_score.items()}
 
     test_loss /= num_batches
 
@@ -342,13 +352,18 @@ def test(dataloader: DialogDataLoader, model: Seq2Seq):
     print(f"precision=\n{precision}")
     print(f"f1_score=\n{f1_score}")
 
+    return average_f1
+
 
 def main():
     print("Using {} device".format(device))
+    save_path = Path(args.save_folder)
 
-    train_data = DialogDataset(dataset_type='train', k=10, domains=['restaurant'])
-    val_data = DialogDataset(dataset_type='val', k=10, domains=['restaurant'])
+    train_data = DialogDataset(dataset_type='train', k=10, domains=['taxi'])
+    val_data = DialogDataset(dataset_type='val', k=10, domains=['taxi'])
     # test_data = DialogDataset(dataset_type='test', k=10, domains=['restaurant', 'hotel'])
+    # train_data = DialogDataset(dataset_type='dummy', k=10)
+    # val_data = DialogDataset(dataset_type='dummy', k=10)
 
     train_dataloader = DialogDataLoader(train_data, batch_size=args.batch_size, batch_first=True)
     action_map = train_dataloader.action_to_ids
@@ -368,14 +383,35 @@ def main():
 
     print(model)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)
 
     epochs = args.epochs
+    best_f1 = -100.0
+    not_improved = 0
     for t in range(epochs):
         print(f"Epoch {t + 1}\n-------------------------------")
         train(train_dataloader, model, optimizer)
         print("Test on train:")
         test(train_dataloader, model)
         print("Test on val:")
-        test(val_dataloader, model)
+        average_f1 = test(val_dataloader, model)
+        if average_f1 > best_f1:
+            print(f'New model found, {average_f1=}, saving')
+            torch.save(model, save_path / 'model' / 'weights.pth')
+            best_f1 = average_f1
+            not_improved = 0
+
+        else:
+            not_improved += 1
+            if not_improved >= 500:
+                break
+
+    # Evaluate the best model once again
+    print("---------------------------------------------")
+    print("---------------------------------------------")
+    print("Training finished, evaluate the best model:")
+    model = torch.load(save_path / 'model' / 'weights.pth', map_location=device)
+    average_f1 = test(val_dataloader, model)
+    print(f'Best model {average_f1=}')
+
     print("Done!")
