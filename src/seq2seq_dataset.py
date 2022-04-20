@@ -4,8 +4,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 from pathlib import Path
 from transformers import GPT2Tokenizer
+from transformers import RobertaTokenizer
 import numpy as np
-
 
 DOMAIN_NAMES = ['Restaurant', 'Attraction', 'Hotel', 'Taxi', 'Train', 'Bus', 'Hospital', 'Police']
 PAD, UNK, SOS, EOS = 0, 1, 2, 3
@@ -47,7 +47,8 @@ class DialogDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    def extract_data(self, dataset_dir: str, dataset_type: str, domains: list = None, strip_domain: bool = False) -> list[dict]:
+    def extract_data(self, dataset_dir: str, dataset_type: str, domains: list = None, strip_domain: bool = False) -> \
+            list[dict]:
         """
         Loads data from the specified directory.
 
@@ -211,7 +212,7 @@ class DialogDataLoader(DataLoader):
         """
         self.dataset = dataset
         self.batch_sampler = self.BatchSampler(dataset, num_buckets=num_buckets, batch_size=batch_size)
-        self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
         self.batch_first = batch_first
 
         if action_map is None:
@@ -259,34 +260,58 @@ class DialogDataLoader(DataLoader):
             }`
         """
         user_utterances = []
+        user_utterances_masks = []
         system_utterances = []
-
+        system_utterances_masks = []
         system_actions = []
         context = []
+        context_masks = []
         for i, example in enumerate(batch_samples):
-            user_utt_ = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(example['user_utterance']))
-            system_utt_ = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(example['system_utterance']))
-            action_ = self.convert_actions_to_ids(example['system_actions'])
-            context_ = self.tokenizer.convert_tokens_to_ids(
-                self.tokenizer.tokenize('<|endoftext|>'.join(example['context']) + '<|endoftext|>'))
+            # tokenizer returns dictionary:
+            #   'input_ids': list of indexes of tokenized sentence (sentence is tokenized and then converted into ints)
+            #   'attention_mask': list of ones with the same size as 'input_ids'
+            # both are tensors with shape (1, num_of_tokens), therefore, we squeeze them to remove the first dim.
+            tokenized_user_utt = self.tokenizer(example['user_utterance'], return_tensors="pt")
+            tokenized_system_utt = self.tokenizer(example['system_utterance'], return_tensors="pt")
+            tokenized_context = self.tokenizer('</s>'.join(example['context']) + '</s>', return_tensors="pt")
 
-            user_utterances.append(torch.tensor(user_utt_, dtype=torch.int64))
-            system_utterances.append(torch.tensor(system_utt_, dtype=torch.int64))
-            system_actions.append(torch.tensor(action_, dtype=torch.int64))
-            context.append(torch.tensor(context_, dtype=torch.int64))
+            # convert actions into ids as well and convert it into a tensor
+            action = torch.tensor(self.convert_actions_to_ids(example['system_actions']), dtype=torch.int64)
 
+            # append everything into corresponding lists, squeeze  tensors to remove first dim of size 1
+            user_utterances.append(tokenized_user_utt['input_ids'].squeeze())
+            user_utterances_masks.append(tokenized_user_utt['attention_mask'].squeeze())
+            system_utterances.append(tokenized_system_utt['input_ids'].squeeze())
+            system_utterances_masks.append(tokenized_system_utt['attention_mask'].squeeze())
+            context.append(tokenized_context['input_ids'].squeeze())
+            context_masks.append(tokenized_context['attention_mask'].squeeze())
+            system_actions.append(action)
+
+        # Now we have lists of individual tensors for our batch. We need to pad each tensor in a list to the
+        # longest one in the list and create one tensor of shape (batch_size, size_of_the_longest_tensor_in_batch).
+        # Utterances tensors need to be padded with value 1 (that is PAD value for RoBERTa).
+        # Actions are padded with value 0
         user_utterances = torch.nn.utils.rnn.pad_sequence(user_utterances, batch_first=self.batch_first,
-                                                          padding_value=0)
+                                                          padding_value=1)
+        user_utterances_masks = torch.nn.utils.rnn.pad_sequence(user_utterances_masks, batch_first=self.batch_first,
+                                                                padding_value=1)
         system_utterances = torch.nn.utils.rnn.pad_sequence(system_utterances, batch_first=self.batch_first,
-                                                            padding_value=0)
+                                                            padding_value=1)
+        system_utterances_masks = torch.nn.utils.rnn.pad_sequence(system_utterances_masks, batch_first=self.batch_first,
+                                                                  padding_value=1)
         system_actions = torch.nn.utils.rnn.pad_sequence(system_actions, batch_first=self.batch_first, padding_value=0)
-        context = torch.nn.utils.rnn.pad_sequence(context, batch_first=self.batch_first, padding_value=0)
+        context = torch.nn.utils.rnn.pad_sequence(context, batch_first=self.batch_first, padding_value=1)
+        context_masks = torch.nn.utils.rnn.pad_sequence(context_masks, batch_first=self.batch_first, padding_value=1)
 
+        # Construct the batch as a dictionary.
         batch = {
             'user_utterance': user_utterances.to(device),
+            'user_utterance_mask': user_utterances_masks.to(device),
             'system_utterance': system_utterances.to(device),
+            'system_utterance_mask': system_utterances_masks.to(device),
             'system_actions': system_actions.to(device),
-            'context': context.to(device)
+            'context': context.to(device),
+            'context_mask': context_masks.to(device)
         }
         return batch
 
@@ -304,10 +329,13 @@ class DialogDataLoader(DataLoader):
             'context': [],
         }
         for i in range(len(batch['context'])):
-            user_utt_ = self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(batch['user_utterance'][i]))
-            system_utt_ = self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(batch['system_utterance'][i]))
+            user_utt_ = self.tokenizer.convert_tokens_to_string(
+                self.tokenizer.convert_ids_to_tokens(batch['user_utterance'][i]))
+            system_utt_ = self.tokenizer.convert_tokens_to_string(
+                self.tokenizer.convert_ids_to_tokens(batch['system_utterance'][i]))
             act_ = self.convert_ids_to_actions(batch['system_actions'][i])
-            context_ = self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(batch['context'][i]))
+            context_ = self.tokenizer.convert_tokens_to_string(
+                self.tokenizer.convert_ids_to_tokens(batch['context'][i]))
 
             output['user_utterance'].append(user_utt_)
             output['system_utterance'].append(system_utt_)
