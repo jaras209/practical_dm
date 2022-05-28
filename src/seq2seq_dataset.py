@@ -3,7 +3,6 @@ import json
 import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 from pathlib import Path
-from transformers import GPT2Tokenizer
 from transformers import RobertaTokenizer
 import numpy as np
 
@@ -14,6 +13,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use '../data'.
 DATASET_DIR = '/home/safar/HCN/data'
+
+
 # DATASET_DIR = '../data'
 
 
@@ -238,11 +239,12 @@ class DialogDataLoader(DataLoader):
         output.append(self.action_to_ids.get('<EOS>'))
         return output
 
-    def convert_ids_to_actions(self, actions: torch.Tensor):
+    def convert_ids_to_actions(self, actions: torch.Tensor, skip_special_actions: bool = False):
         output = []
         actions = actions.tolist()
         for action in actions:
-            output.append(self.ids_to_action.get(action, '<UNK>'))
+            if action > 3:
+                output.append(self.ids_to_action.get(action, '<UNK>'))
 
         return output
 
@@ -290,15 +292,16 @@ class DialogDataLoader(DataLoader):
         # Now we have lists of individual tensors for our batch. We need to pad each tensor in a list to the
         # longest one in the list and create one tensor of shape (batch_size, size_of_the_longest_tensor_in_batch).
         # Utterances tensors need to be padded with value 1 (that is PAD value for RoBERTa).
-        # Actions are padded with value 0
+        # Mask tensors need to be padded with value 0 (True/False)
+        # Actions are padded with value 0 (our action_to_ids dictionary maps `<PAD>` action into `0`)
         user_utterances = torch.nn.utils.rnn.pad_sequence(user_utterances, batch_first=self.batch_first,
                                                           padding_value=1)
         user_utterances_masks = torch.nn.utils.rnn.pad_sequence(user_utterances_masks, batch_first=self.batch_first,
-                                                                padding_value=1)
+                                                                padding_value=0)
         system_utterances = torch.nn.utils.rnn.pad_sequence(system_utterances, batch_first=self.batch_first,
                                                             padding_value=1)
         system_utterances_masks = torch.nn.utils.rnn.pad_sequence(system_utterances_masks, batch_first=self.batch_first,
-                                                                  padding_value=1)
+                                                                  padding_value=0)
         system_actions = torch.nn.utils.rnn.pad_sequence(system_actions, batch_first=self.batch_first, padding_value=0)
         context = torch.nn.utils.rnn.pad_sequence(context, batch_first=self.batch_first, padding_value=1)
         context_masks = torch.nn.utils.rnn.pad_sequence(context_masks, batch_first=self.batch_first, padding_value=1)
@@ -315,11 +318,12 @@ class DialogDataLoader(DataLoader):
         }
         return batch
 
-    def to_string(self, batch):
+    def to_string(self, batch, predictions=None):
         """
         Converts batch examples into strings.
 
         :param batch: batch
+        :param predictions:
         :return: batch with strings instead of ids
         """
         output = {
@@ -327,19 +331,28 @@ class DialogDataLoader(DataLoader):
             'system_utterance': [],
             'system_actions': [],
             'context': [],
+            'predicted_actions': []
         }
+        # Go through individual batch examples and convert then back to string.
         for i in range(len(batch['context'])):
             user_utt_ = self.tokenizer.convert_tokens_to_string(
-                self.tokenizer.convert_ids_to_tokens(batch['user_utterance'][i]))
+                self.tokenizer.convert_ids_to_tokens(batch['user_utterance'][i], skip_special_tokens=True))
+
             system_utt_ = self.tokenizer.convert_tokens_to_string(
-                self.tokenizer.convert_ids_to_tokens(batch['system_utterance'][i]))
-            act_ = self.convert_ids_to_actions(batch['system_actions'][i])
+                self.tokenizer.convert_ids_to_tokens(batch['system_utterance'][i], skip_special_tokens=True))
+
             context_ = self.tokenizer.convert_tokens_to_string(
-                self.tokenizer.convert_ids_to_tokens(batch['context'][i]))
+                self.tokenizer.convert_ids_to_tokens(batch['context'][i], skip_special_tokens=True))
+
+            act_ = self.convert_ids_to_actions(batch['system_actions'][i], skip_special_actions=True)
+
+            if predictions is not None:
+                pred_act_ = self.convert_ids_to_actions(predictions[i], skip_special_actions=True)
+                output['predicted_actions'].append(pred_act_)
 
             output['user_utterance'].append(user_utt_)
             output['system_utterance'].append(system_utt_)
-            output['system_actions'].append(act_)
             output['context'].append(context_)
+            output['system_actions'].append(act_)
 
         return output
