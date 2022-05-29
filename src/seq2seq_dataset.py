@@ -268,6 +268,8 @@ class DialogDataLoader(DataLoader):
         system_actions = []
         context = []
         context_masks = []
+        sequence = []
+        sequence_masks = []
         for i, example in enumerate(batch_samples):
             # tokenizer returns dictionary:
             #   'input_ids': list of indexes of tokenized sentence (sentence is tokenized and then converted into ints)
@@ -276,6 +278,8 @@ class DialogDataLoader(DataLoader):
             tokenized_user_utt = self.tokenizer(example['user_utterance'], return_tensors="pt")
             tokenized_system_utt = self.tokenizer(example['system_utterance'], return_tensors="pt")
             tokenized_context = self.tokenizer('</s>'.join(example['context']) + '</s>', return_tensors="pt")
+            tokenized_sequence = self.tokenizer('</s>'.join(example['context']) + '</s>' + example['user_utterance'] +
+                                                '</s>', return_tensors="pt")
 
             # convert actions into ids as well and convert it into a tensor
             action = torch.tensor(self.convert_actions_to_ids(example['system_actions']), dtype=torch.int64)
@@ -287,6 +291,8 @@ class DialogDataLoader(DataLoader):
             system_utterances_masks.append(tokenized_system_utt['attention_mask'].squeeze())
             context.append(tokenized_context['input_ids'].squeeze())
             context_masks.append(tokenized_context['attention_mask'].squeeze())
+            sequence.append(tokenized_sequence['input_ids'].squeeze())
+            sequence_masks.append(tokenized_sequence['attention_mask'].squeeze())
             system_actions.append(action)
 
         # Now we have lists of individual tensors for our batch. We need to pad each tensor in a list to the
@@ -302,9 +308,11 @@ class DialogDataLoader(DataLoader):
                                                             padding_value=1)
         system_utterances_masks = torch.nn.utils.rnn.pad_sequence(system_utterances_masks, batch_first=self.batch_first,
                                                                   padding_value=0)
-        system_actions = torch.nn.utils.rnn.pad_sequence(system_actions, batch_first=self.batch_first, padding_value=0)
         context = torch.nn.utils.rnn.pad_sequence(context, batch_first=self.batch_first, padding_value=1)
-        context_masks = torch.nn.utils.rnn.pad_sequence(context_masks, batch_first=self.batch_first, padding_value=1)
+        context_masks = torch.nn.utils.rnn.pad_sequence(context_masks, batch_first=self.batch_first, padding_value=0)
+        sequence = torch.nn.utils.rnn.pad_sequence(sequence, batch_first=self.batch_first, padding_value=1)
+        sequence_masks = torch.nn.utils.rnn.pad_sequence(sequence_masks, batch_first=self.batch_first, padding_value=0)
+        system_actions = torch.nn.utils.rnn.pad_sequence(system_actions, batch_first=self.batch_first, padding_value=0)
 
         # Construct the batch as a dictionary.
         batch = {
@@ -314,7 +322,9 @@ class DialogDataLoader(DataLoader):
             'system_utterance_mask': system_utterances_masks.to(device),
             'system_actions': system_actions.to(device),
             'context': context.to(device),
-            'context_mask': context_masks.to(device)
+            'context_mask': context_masks.to(device),
+            'sequence': sequence.to(device),
+            'sequence_mask': sequence_masks.to(device)
         }
         return batch
 
