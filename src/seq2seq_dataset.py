@@ -12,10 +12,8 @@ PAD, UNK, SOS, EOS = 0, 1, 2, 3
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use '../data'.
-DATASET_DIR = '/home/safar/HCN/data'
-
-
-# DATASET_DIR = '../data'
+# DATASET_DIR = '/home/safar/HCN/data'
+DATASET_DIR = '../data'
 
 
 class DialogDataset(Dataset):
@@ -213,7 +211,7 @@ class DialogDataLoader(DataLoader):
         """
         self.dataset = dataset
         self.batch_sampler = self.BatchSampler(dataset, num_buckets=num_buckets, batch_size=batch_size)
-        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base", return_dict=False)
         self.batch_first = batch_first
 
         if action_map is None:
