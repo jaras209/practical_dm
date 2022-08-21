@@ -16,9 +16,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
 parser.add_argument("--embedding_size", default=256, type=int, help="Token embedding dimension.")
 parser.add_argument("--epochs", default=5, type=int, help="Number of epochs.")
-parser.add_argument("--num_heads", default=6, type=int, help=".")
-parser.add_argument("--num_encoder_layers", default=1, type=int, help="")
-parser.add_argument("--num_decoder_layers", default=1, type=int, help="")
+parser.add_argument("--num_heads", default=2, type=int, help=".")
+parser.add_argument("--num_encoder_layers", default=2, type=int, help="")
+parser.add_argument("--num_decoder_layers", default=2, type=int, help="")
 parser.add_argument("--dim_feedforward", default=2048, type=int, help="")
 parser.add_argument("--dropout", default=0.1, type=float, help="")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
@@ -36,7 +36,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 class Transformer(nn.Module):
     def __init__(self, embedding_size: int, vocabulary_size: int, num_actions: int,
                  num_heads: int, num_encoder_layers: int, num_decoder_layers: int, dim_feedforward: int, dropout: float,
-                 max_actions: int = 5, batch_first: bool = True, norm_first: bool = False, seq_pad_index: int = 1):
+                 max_seq_length: int = 500, max_actions: int = 20, batch_first: bool = True, norm_first: bool = False,
+                 seq_pad_index: int = 1):
         super(Transformer, self).__init__()
         self.embedding_size = 768
         self.vocabulary_size = vocabulary_size
@@ -47,6 +48,7 @@ class Transformer(nn.Module):
         self.dim_feedforward = dim_feedforward
         self.dropout_rate = dropout
         self.max_actions = max_actions
+        self.max_seq_length = max_seq_length
         self.batch_first = batch_first
         self.norm_first = norm_first
         self.seq_pad_index = seq_pad_index
@@ -54,12 +56,14 @@ class Transformer(nn.Module):
         # Embedding layer for input sequence (into Encoder) as the last layer of RoBERTa model
         self.word_embedding = RobertaModel.from_pretrained("roberta-base")
 
-        # Positional embeddings are probably part of Roberta
-        # TODO: try positional embeddings
+        # Positional embeddings for input sequence in Encoder
+        self.word_pos_embedding = nn.Embedding(self.max_seq_length, self.embedding_size)
 
         # Embedding for actions on the Decoder input
         self.action_embedding = nn.Embedding(self.num_actions, self.embedding_size, padding_idx=PAD)
-        # TODO: maybe again positional embeddings
+
+        # Positional embeddings for input sequence in Decoder
+        self.action_pos_embedding = nn.Embedding(self.max_actions, self.embedding_size)
 
         self.transformer = nn.Transformer(
             d_model=self.embedding_size,
@@ -92,20 +96,24 @@ class Transformer(nn.Module):
         :param target_pad_mask: the same as `source_pad_mask` but for target actions. Shape: (batch_size, target_len)
         :return:
         """
-        batch_size = source_sequence.shape[0]
-        target_action_len = target_action.shape[1]
+        batch_size, source_len = source_sequence.shape
+        target_len = target_action.shape[1]
+
+        # Create positions for source and target
+        source_positions = torch.arange(0, source_len).unsqueeze(0).expand(batch_size, source_len).to(device)
+        target_positions = torch.arange(0, target_len).unsqueeze(0).expand(batch_size, target_len).to(device)
 
         # Embed source sequence and target actions
         embedded_source = self.dropout(self.word_embedding(source_sequence)['last_hidden_state'])
         embedded_target = self.dropout(self.action_embedding(target_action))
 
         transformer_output = self.transformer(embedded_source, embedded_target,
-                                              tgt_mask=target_mask)
+                                              tgt_mask=target_mask,
+                                              src_key_padding_mask=source_pad_mask,
+                                              tgt_key_padding_mask=target_pad_mask
+                                              )
 
         logits = self.linear(transformer_output)
-
-        # decoder_outputs = decoder_logits.argmax(dim=2)
-        # `decoder_outputs` shape: (batch_size, self.max_actions)
 
         return logits
 
@@ -196,8 +204,8 @@ def get_target_mask(size: int) -> torch.tensor:
 def train(dataloader: DialogDataLoader, model: Transformer, optimizer, loss_fn: nn.CrossEntropyLoss):
     model.train()
     total_loss = 0
-    with tqdm(dataloader, unit='batch') as iterations:
-        for num_batch, batch in enumerate(iterations):
+    with tqdm(dataloader, unit='batch', total=len(dataloader)) as iterations:
+        for batch in iterations:
             source_sequence = batch['sequence'].to(device)
             target_action = batch['system_actions'].to(device)
 
@@ -219,7 +227,6 @@ def train(dataloader: DialogDataLoader, model: Transformer, optimizer, loss_fn: 
             # TODO: změnit ten pad token na nějakou proměnnou. Roberta má pad token 1.
             source_pad_mask = get_pad_mask(source_sequence, pad_token=1).to(device)
             target_pad_mask = get_pad_mask(target_input, pad_token=PAD).to(device)
-
             logits = model(source_sequence, target_input, target_mask, source_pad_mask, target_pad_mask)
 
             loss = compute_loss(logits, target_expected, loss_fn, PAD)
@@ -227,7 +234,8 @@ def train(dataloader: DialogDataLoader, model: Transformer, optimizer, loss_fn: 
             # Do backpropagation
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm(model.parameters(), max_norm=1)
+
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
             optimizer.step()
 
             total_loss += loss.detach().item()
@@ -244,9 +252,9 @@ def evaluate(dataloader: DialogDataLoader, model: Transformer, loss_fn: nn.Cross
     ids_to_action = dataloader.ids_to_action
     total_loss = 0.
     total_average_f1 = 0.
-    total_recall = {ids_to_action[a]: 0. for a in ids_to_action.keys()}
-    total_precision = {ids_to_action[a]: 0. for a in ids_to_action.keys()}
-    total_f1_score = {ids_to_action[a]: 0. for a in ids_to_action.keys()}
+    total_recall = {a: 0. for a in ids_to_action.values()}
+    total_precision = {a: 0. for a in ids_to_action.values()}
+    total_f1_score = {a: 0. for a in ids_to_action.values()}
     for num_batch, batch in enumerate(dataloader):
         source_sequence = batch['sequence'].to(device)
         target_action = batch['system_actions'].to(device)
@@ -312,9 +320,9 @@ def fit(model: Transformer, train_dataloader: DialogDataLoader, val_dataloader: 
         print(f"Training loss: {train_loss:.4f}")
         print(f"Validation loss: {val_loss:.4f}")
         print(f"Validation average f1: {val_average_f1:.4f}")
-        print(f"Validation recall: {val_recall:.4f}")
-        print(f"Validation precision: {val_precision:.4f}")
-        print(f"Validation f1_score: {val_f1_score:.4f}")
+        print(f"Validation recall: {val_recall}")
+        print(f"Validation precision: {val_precision}")
+        print(f"Validation f1_score: {val_f1_score}")
 
         history.append({'epoch': epoch + 1,
                         'val_loss': val_loss,
@@ -339,6 +347,63 @@ def fit(model: Transformer, train_dataloader: DialogDataLoader, val_dataloader: 
     return train_loss_list, val_loss_list
 
 
+def predict_batch(model: Transformer, batch: dict):
+    model.eval()
+    with torch.no_grad():
+        source_tensor = batch['sequence'].to(device)
+        target_tensor = torch.tensor([[SOS]] * source_tensor.size(dim=0), device=device)
+
+        for step in range(model.max_actions):
+            # Compute target mask
+            target_mask = get_target_mask(target_tensor.size(1)).to(device)
+
+            # Compute padding masks
+            source_pad_mask = get_pad_mask(source_tensor, pad_token=PAD).to(device)
+            target_pad_mask = get_pad_mask(target_tensor, pad_token=PAD).to(device)
+
+            logits = model(source_tensor, target_tensor, target_mask, source_pad_mask, target_pad_mask)
+            next_target = torch.argmax(logits, dim=2, keepdim=True)[:, -1, :]
+
+            # Concatenate previous target tensor with predicted next target
+            target_tensor = torch.cat((target_tensor, next_target), dim=1)
+
+            # Stop if model predicts end of sentence token in all sequences in the batch
+            if torch.all(torch.any(torch.eq(target_tensor, EOS), dim=1)).item():
+                break
+
+    return target_tensor
+
+
+def test(model: Transformer, dataloader: DialogDataLoader, save_path: Path):
+    csv_output = []
+    with torch.no_grad():
+        for batch in dataloader:
+            # Compute prediction
+            outputs = predict_batch(model, batch)
+
+            string_output = dataloader.to_string(batch, outputs)
+            for o in range(len(string_output['user_utterance'])):
+                csv_output.append(
+                    {"user_utterance": string_output['user_utterance'][o],
+                     "system_utterance": string_output['system_utterance'][o],
+                     "context": string_output['context'][o],
+                     "system_actions": string_output['system_actions'][o],
+                     "predicted_actions": string_output['predicted_actions'][o]
+                     }
+                )
+
+                print(f"USER_UTTERANCE: {string_output['user_utterance'][o]}\n"
+                      f"SYSTEM_UTTERANCE: {string_output['system_utterance'][o]}\n"
+                      f"CONTEXT: {string_output['context'][o]}\n"
+                      f"SYSTEM_ACTIONS: {string_output['system_actions'][o]}\n"
+                      f"PREDICTED_ACTIONS: {string_output['predicted_actions'][o]}\n"
+                      f"\n"
+                      f"==============================================================\n")
+
+    pd.DataFrame(csv_output).to_csv(save_path / 'val_output.csv', sep='\t')
+    return outputs
+
+
 def main(args):
     print("Using {} device".format(device))
 
@@ -347,8 +412,8 @@ def main(args):
         print(f"Save folder doesn't exist, creating it. {save_path}")
         os.makedirs(save_path)
 
-    train_data = DialogDataset(dataset_type='train', k=10, domains=['taxi'])
-    val_data = DialogDataset(dataset_type='val', k=10, domains=['taxi'])
+    train_data = DialogDataset(dataset_type='train', k=5, domains=['taxi'])
+    val_data = DialogDataset(dataset_type='val', k=5, domains=['taxi'])
     # val_data = train_data
     # test_data = DialogDataset(dataset_type='test', k=10, domains=['restaurant', 'hotel'])
     # train_data = DialogDataset(dataset_type='dummy', k=10)
@@ -405,6 +470,8 @@ def main(args):
     val_loss, val_average_f1, val_recall, val_precision, val_f1_score = evaluate(val_dataloader, model, loss_fn)
     print(f"Validation loss: {val_loss:.4f}")
     print(f"Validation average f1: {val_average_f1:.4f}")
-    print(f"Validation recall: {val_recall:.4f}")
-    print(f"Validation precision: {val_precision:.4f}")
-    print(f"Validation f1_score: {val_f1_score:.4f}")
+    print(f"Validation recall: {val_recall}")
+    print(f"Validation precision: {val_precision}")
+    print(f"Validation f1_score: {val_f1_score}")
+
+    test(model, val_dataloader, save_path)

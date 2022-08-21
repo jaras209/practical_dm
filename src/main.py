@@ -1,9 +1,9 @@
-from transformer_model import main, parser
+from classification import main, parser
 
 if __name__ == '__main__':
     main(parser.parse_args([
-        # "--save_folder", f"/home/safar/HCN/models/taxi_transformer",
-        "--save_folder", "../models/taxi_transformer",
-        "--epochs", "20",
+        "--save_folder", f"/home/safar/HCN/models/classification_model_electra",
+        # "--save_folder", "../models/classification_model",
+        "--epochs", "30",
         "--train"
     ]))
