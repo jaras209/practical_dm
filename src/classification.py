@@ -18,12 +18,12 @@ from transformers.pipelines.pt_utils import KeyDataset
 from classification_dataset_2 import create_dataset, create_action_map, load_data
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--pretrained_model", default='google/electra-base-discriminator', type=str, help="Name of the Hugging face model")
+parser.add_argument("--pretrained_model", default='roberta-base', type=str, help="Name of the Hugging face model")
 parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
 parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
 parser.add_argument("--learning_rate", default=5e-5, type=float, help="Learning rate.")
 parser.add_argument("--run_name", default="new_model", type=str)
-parser.add_argument("--early_stopping_patience", default=5, type=int)
+parser.add_argument("--early_stopping_patience", default=50, type=int)
 parser.add_argument("--save_folder", default="/home/safar/HCN/models/new_model", type=str,
                     help="Name of the folder where to save the model or where to load it from")
 parser.add_argument('--train', dest='train_model', action='store_true')
@@ -38,7 +38,10 @@ DOMAINS = ['taxi']
 def compute_metrics(eval_pred):
     logits, y_true = eval_pred
     y_pred = (logits >= 0).astype(np.float32)
-    return accuracy_score(y_true=y_true, y_pred=y_pred)
+    return {"accuracy": accuracy_score(y_true=y_true, y_pred=y_pred),
+            "recall": recall_score(y_true=y_true, y_pred=y_pred, average='weighted'),
+            "precision": precision_score(y_true=y_true, y_pred=y_pred, average='weighted'),
+            "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
 
 
 def main(args):
@@ -52,10 +55,11 @@ def main(args):
 
     train_dataset = create_dataset(train_df, action_to_ids, tokenizer)
     val_dataset = create_dataset(val_df, action_to_ids, tokenizer)
+    print(train_dataset.features)
     print("LOADING TRAIN AND VAL DATASETS DONE!")
     print(f"{50 * '='}")
     if args.train_model:
-        print("TRAINING A NEW MODEL...")
+        print(f"TRAINING A NEW MODEL USING {args.pretrained_model}...")
         training_args = TrainingArguments(
             run_name=args.run_name,
             output_dir=str(args.save_folder),
@@ -74,7 +78,8 @@ def main(args):
             num_train_epochs=args.epochs,
             save_strategy='epoch',
             load_best_model_at_end=True,
-            save_total_limit=3,
+            metric_for_best_model='f1',
+            save_total_limit=5,
             warmup_steps=300,
         )
 
@@ -103,8 +108,8 @@ def main(args):
     model = AutoModelForSequenceClassification.from_pretrained(f'{args.save_folder}').to(device)
     model.eval()
 
-    pipe = pipelines.pipeline(task='text-classification', model=model, tokenizer=tokenizer, device=0,
-                              return_all_scores=True)
+    pipe = pipelines.pipeline(task='text-classification', model=model, tokenizer=tokenizer, top_k=len(action_to_ids),
+                              device=0 if torch.cuda.is_available() else -1)
 
     predictions = pipe(KeyDataset(val_dataset, 'text'))
 
@@ -130,8 +135,8 @@ def main(args):
         predicted_labels.append(labels)
         y_pred[i, labels_ids] = 1
 
-    for i, reference in enumerate(val_df.system_actions.tolist()):
-        labels_ids = [action_to_ids[action] for action in reference]
+    for i, true_actions in enumerate(val_df.system_actions.tolist()):
+        labels_ids = [action_to_ids.get(action, 0) for action in true_actions]
         y_true[i, labels_ids] = 1
 
     val_df['predicted_actions'] = predicted_labels

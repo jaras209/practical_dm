@@ -9,8 +9,8 @@ from datasets import Dataset
 DOMAIN_NAMES = ['Restaurant', 'Attraction', 'Hotel', 'Taxi', 'Train', 'Bus', 'Hospital', 'Police']
 
 # TODO: `dataset_dir` must be changed to '/home/safar/HCN/data' when using AIC. Locally, use '../data'.
-DATASET_DIR = '/home/safar/HCN/data'
-# DATASET_DIR = '../data'
+# DATASET_DIR = '/home/safar/HCN/data'
+DATASET_DIR = '../data'
 
 
 def load_data(dataset_type: str, k: int, dataset_dir: str = DATASET_DIR, domains: list = None,
