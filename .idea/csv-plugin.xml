@@ -17,6 +17,27 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/huggingface_dataset/test_preprocessed_data.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/huggingface_dataset/train_preprocessed_data.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/huggingface_dataset/validation_preprocessed_data.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/classification_model_2/metrics.csv">
           <value>
             <Attribute>
