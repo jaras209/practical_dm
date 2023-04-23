@@ -6,14 +6,18 @@ import torch
 from torch import nn
 import numpy as np
 from seq2seq_dataset import PAD, UNK, SOS, EOS
+from transformers import RobertaModel
+import os
+import pandas as pd
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
+parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
 parser.add_argument("--token_embedding_size", default=256, type=int, help="Token embedding dimension.")
 parser.add_argument("--action_embedding_size", default=128, type=int, help="Action embedding dimension.")
 parser.add_argument("--epochs", default=500, type=int, help="Number of epochs.")
 parser.add_argument("--hidden_size", default=256, type=int, help="RNN cell dimension.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
+parser.add_argument("--learning_rate", default=1e-2, type=float, help="Learning rate.")
 parser.add_argument("--save_folder", default="/home/safar/HCN/models", type=str,
                     help="Name of the folder where to save the model or where to load it from")
 parser.add_argument('--train', dest='train_model', action='store_true')
@@ -30,7 +34,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.vocabulary_size = vocabulary_size
         self.hidden_size = hidden_size
-        self.embedding_size = embedding_size
+        self.embedding_size = 768
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.batch_first = batch_first
@@ -38,26 +42,29 @@ class Encoder(nn.Module):
         # Calculate number of directions
         self.num_directions = 2 if bidirectional else 1
 
-        # Embedding layer same for both utterances and context
-        self.embedding = nn.Embedding(vocabulary_size, embedding_size, padding_idx=0)
+        # Embedding layer which is the last layer of RoBERTa model
+        self.embedding = RobertaModel.from_pretrained("roberta-base")
 
-        self.utterance_gru = nn.GRU(input_size=embedding_size, hidden_size=hidden_size, batch_first=batch_first,
+        self.utterance_gru = nn.GRU(input_size=self.embedding_size, hidden_size=hidden_size, batch_first=batch_first,
                                     num_layers=num_layers, bidirectional=bidirectional)
-        self.context_gru = nn.GRU(input_size=embedding_size, hidden_size=hidden_size, batch_first=batch_first,
+        self.context_gru = nn.GRU(input_size=self.embedding_size, hidden_size=hidden_size, batch_first=batch_first,
                                   num_layers=num_layers, bidirectional=bidirectional)
 
-    def forward(self, utterance: torch.Tensor, context: torch.Tensor):
+    def forward(self, utterance: torch.Tensor, utterance_mask: torch.Tensor,
+                context: torch.Tensor, context_mask: torch.Tensor):
         """
 
         :param utterance: shape: (batch_size, utt_seq_len)
+        :param utterance_mask: shape: (batch_size, utt_seq_len)
         :param context: shape: (batch_size, con_seq_len)
+        :param context_mask: shape: (batch_size, con_seq_len)
         :return:
         """
 
-        embedded_utterance = self.embedding(utterance)
+        embedded_utterance = self.embedding(utterance, utterance_mask).last_hidden_state
         # `embedded_utterance` shape: (batch_size, utt_seq_len, embedding_size)
 
-        embedded_context = self.embedding(context)
+        embedded_context = self.embedding(context, context_mask).last_hidden_state
         # `embedded_context` shape: (batch_size, con_seq_len, embedding_size)
 
         encoder_utterance_output, encoder_utterance_hidden = self.utterance_gru(embedded_utterance)
@@ -191,14 +198,16 @@ class Seq2Seq(nn.Module):
         self.max_actions = max_actions
         self.num_actions = self.decoder.num_actions
 
-    def forward(self, utterance: torch.Tensor, context: torch.Tensor, target_action: torch.Tensor = None):
+    def forward(self, utterance: torch.Tensor, utterance_mask: torch.Tensor, context: torch.Tensor,
+                context_mask: torch.Tensor, target_action: torch.Tensor = None):
         """
 
         :param utterance: current user utterance of shape: (batch_size, utt_seq_len).
+        :param utterance_mask:
         :param context: last k turns of user utterances and system responses separated by index of the special
-            '<|endoftext|>' symbol. shape: (batch_size, context_seq_len).
+            '</s>' symbol. shape: (batch_size, context_seq_len).
+        :param context_mask:
         :param target_action: actions on the input of the Decoder, shape: (batch_size, actions_seq_len).
-        :param training:
         :return:
         """
         batch_size = utterance.shape[0]
@@ -206,7 +215,7 @@ class Seq2Seq(nn.Module):
 
         # Call the encoder on the input utterance and context. The results are two tensors with hidden states at each
         # time step for both utterances and context
-        encoder_utterance_output, encoder_context_output = self.encoder(utterance, context)
+        encoder_utterance_output, encoder_context_output = self.encoder(utterance, utterance_mask, context, context_mask)
         # `encoder_utterance_output` shape: (batch_size, utt_seq_len, self.num_directions * hidden_size)
         # `encoder_context_output` shape: (batch_size, con_seq_len, self.num_directions * hidden_size)
 
@@ -286,11 +295,13 @@ def train(dataloader: DialogDataLoader, model: Seq2Seq, optimizer):
     model.train()
     for num_batch, batch in enumerate(dataloader):
         user_utterance = batch['user_utterance'].to(device)
+        user_utterance_mask = batch['user_utterance_mask'].to(device)
         context = batch['context'].to(device)
+        context_mask = batch['context_mask'].to(device)
         system_actions = batch['system_actions'].to(device)
 
         # Compute prediction and its loss
-        outputs, logits = model(user_utterance, context, system_actions)
+        outputs, logits = model(user_utterance, user_utterance_mask, context, context_mask, system_actions)
         loss = compute_loss(logits, system_actions)
 
         # Do backpropagation
@@ -303,7 +314,7 @@ def train(dataloader: DialogDataLoader, model: Seq2Seq, optimizer):
             print(f"loss: {loss:>7f}  [{current:>5d}/{num_batches:>5d}]")
 
 
-def test(dataloader: DialogDataLoader, model: Seq2Seq):
+def evaluate(dataloader: DialogDataLoader, model: Seq2Seq):
     num_batches = len(dataloader)
     num_actions = dataloader.num_actions
     model.eval()
@@ -314,11 +325,14 @@ def test(dataloader: DialogDataLoader, model: Seq2Seq):
     with torch.no_grad():
         for batch in dataloader:
             user_utterance = batch['user_utterance'].to(device)
+            user_utterance_mask = batch['user_utterance_mask'].to(device)
             context = batch['context'].to(device)
+            context_mask = batch['context_mask'].to(device)
             system_actions = batch['system_actions'].to(device)
 
-            # Compute prediction and its loss
-            outputs, logits = model(user_utterance, context)
+            # Compute prediction and its loss, we are NOT passing target system actions which means
+            # that we are doing the prediction.
+            outputs, logits = model(user_utterance, user_utterance_mask, context, context_mask)
 
             # TODO: možná dát system_actions.float()
             test_loss += compute_loss(logits, system_actions).item()
@@ -355,12 +369,54 @@ def test(dataloader: DialogDataLoader, model: Seq2Seq):
     return average_f1
 
 
-def main():
+def test(dataloader: DialogDataLoader, model: Seq2Seq, save_path):
+    model.eval()
+    csv_output = []
+    with torch.no_grad():
+        for batch in dataloader:
+            user_utterance = batch['user_utterance'].to(device)
+            user_utterance_mask = batch['user_utterance_mask'].to(device)
+            context = batch['context'].to(device)
+            context_mask = batch['context_mask'].to(device)
+            system_actions = batch['system_actions'].to(device)
+
+            # Compute prediction and its loss, we are NOT passing target system actions which means
+            # that we are doing the prediction.
+            outputs, _ = model(user_utterance, user_utterance_mask, context, context_mask)
+
+            string_output = dataloader.to_string(batch, outputs)
+            for o in range(len(string_output['user_utterance'])):
+                csv_output.append(
+                    {"user_utterance": string_output['user_utterance'][o],
+                     "system_utterance": string_output['system_utterance'][o],
+                     "context": string_output['context'][o],
+                     "system_actions": string_output['system_actions'][o],
+                     "predicted_actions": string_output['predicted_actions'][o]
+                     }
+                )
+
+                print(f"USER_UTTERANCE: {string_output['user_utterance'][o]}\n"
+                      f"SYSTEM_UTTERANCE: {string_output['system_utterance'][o]}\n"
+                      f"CONTEXT: {string_output['context'][o]}\n"
+                      f"SYSTEM_ACTIONS: {string_output['system_actions'][o]}\n"
+                      f"PREDICTED_ACTIONS: {string_output['predicted_actions'][o]}\n"
+                      f"\n"
+                      f"==============================================================\n")
+
+    pd.DataFrame(csv_output).to_csv(save_path / 'val_output.csv', sep='\t')
+    return outputs
+
+
+def main(args):
     print("Using {} device".format(device))
+
     save_path = Path(args.save_folder)
+    if not save_path.exists():
+        os.makedirs(save_path)
 
     train_data = DialogDataset(dataset_type='train', k=10, domains=['taxi'])
     val_data = DialogDataset(dataset_type='val', k=10, domains=['taxi'])
+    # val_data = train_data
     # test_data = DialogDataset(dataset_type='test', k=10, domains=['restaurant', 'hotel'])
     # train_data = DialogDataset(dataset_type='dummy', k=10)
     # val_data = DialogDataset(dataset_type='dummy', k=10)
@@ -373,45 +429,51 @@ def main():
     print(f'{num_actions=}, {vocab_size=}, {len(train_data)=}')
 
     val_dataloader = DialogDataLoader(val_data, action_map=action_map, batch_size=args.batch_size, batch_first=True)
+    if args.train_model:
+        encoder = Encoder(vocabulary_size=vocab_size, hidden_size=args.hidden_size,
+                          embedding_size=args.token_embedding_size, num_layers=1).to(device)
+        decoder = Decoder(hidden_size=args.hidden_size, action_embedding_size=args.action_embedding_size,
+                          num_actions=num_actions).to(device)
 
-    encoder = Encoder(vocabulary_size=vocab_size, hidden_size=args.hidden_size,
-                      embedding_size=args.token_embedding_size, num_layers=1).to(device)
-    decoder = Decoder(hidden_size=args.hidden_size, action_embedding_size=args.action_embedding_size,
-                      num_actions=num_actions).to(device)
+        model = Seq2Seq(encoder=encoder, decoder=decoder)
 
-    model = Seq2Seq(encoder=encoder, decoder=decoder)
+        print(model)
 
-    print(model)
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)
+        epochs = args.epochs
+        best_f1 = -100.0
+        not_improved = 0
+        for t in range(epochs):
+            print(f"Epoch {t + 1}\n-------------------------------")
+            train(train_dataloader, model, optimizer)
+            print("Test on train:")
+            evaluate(train_dataloader, model)
+            print("Test on val:")
+            average_f1 = evaluate(val_dataloader, model)
+            if average_f1 > best_f1:
+                print(f'New model found, {average_f1=}, saving')
+                torch.save(model, save_path / 'weights.pth')
+                best_f1 = average_f1
+                not_improved = 0
 
-    epochs = args.epochs
-    best_f1 = -100.0
-    not_improved = 0
-    for t in range(epochs):
-        print(f"Epoch {t + 1}\n-------------------------------")
-        train(train_dataloader, model, optimizer)
-        print("Test on train:")
-        test(train_dataloader, model)
-        print("Test on val:")
-        average_f1 = test(val_dataloader, model)
-        if average_f1 > best_f1:
-            print(f'New model found, {average_f1=}, saving')
-            torch.save(model, save_path / 'model' / 'weights.pth')
-            best_f1 = average_f1
-            not_improved = 0
+            else:
+                not_improved += 1
+                if not_improved >= 500:
+                    break
 
-        else:
-            not_improved += 1
-            if not_improved >= 500:
-                break
+        # Evaluate the best model
+        print("---------------------------------------------")
+        print("---------------------------------------------")
+        print("Training finished, evaluate the best model:")
+        model = torch.load(save_path / 'weights.pth', map_location=device)
+        average_f1 = evaluate(val_dataloader, model)
+        print(f'Best model {average_f1=}')
 
-    # Evaluate the best model once again
-    print("---------------------------------------------")
-    print("---------------------------------------------")
-    print("Training finished, evaluate the best model:")
-    model = torch.load(save_path / 'model' / 'weights.pth', map_location=device)
-    average_f1 = test(val_dataloader, model)
-    print(f'Best model {average_f1=}')
+        print("Done!")
 
-    print("Done!")
+    else:
+        model = torch.load(save_path / 'weights.pth', map_location=device)
+        average_f1 = evaluate(val_dataloader, model)
+        print(f'Best model {average_f1=}')
+        test(val_dataloader, model, save_path)
