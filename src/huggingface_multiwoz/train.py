@@ -42,10 +42,14 @@ parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning 
 parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
                                                                             "training is ended if there is no "
                                                                             "improvement on validation data")
-parser.add_argument("--model_root_path", default="/home/safar/HCN/models/hf_multiwoz_train", type=str,
+parser.add_argument("--model_root_path",
+                    # default="/home/safar/HCN/models/hf_multiwoz_train",
+                    default="../../models/",
+                    type=str,
                     help="Name of the folder where to save the model or where to load it from")
 parser.add_argument("--data_path",
-                    default="/home/safar/HCN/data/huggingface_data",
+                    # default="/home/safar/HCN/data/huggingface_data",
+                    default="../../data/huggingface_data",
                     type=str,
                     help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
 parser.add_argument("--domains", default=['train'], nargs='*')
