@@ -80,7 +80,21 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/models/hf_restaurant_roberta-base_230424-123219/test_predictions.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/hf_restaurant_roberta-base_230424-123219/train_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/models/hf_restaurant_roberta-base_230424-123219/train_predictions.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

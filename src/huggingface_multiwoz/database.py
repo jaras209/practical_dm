@@ -2,6 +2,7 @@ import json
 import random
 import copy
 import os
+from pathlib import Path
 from typing import Text, Dict
 
 from fuzzywuzzy import fuzz
@@ -38,26 +39,26 @@ class MultiWOZDatabase:
         'hospital'
     ]
 
-    def __init__(self, database_path: Text):
+    def __init__(self, database_path: Path):
         self.data, self.data_keys = self._load_data(database_path)
 
-    def _load_data(self, database_path: Text):
+    def _load_data(self, database_path: Path):
         database_data = {}
         database_keys = {}
 
         for domain in self.DOMAINS:
-            with open(os.path.join(database_path, f"{domain}_db.json"), "r") as f:
-                for l in f:
-                    if not l.startswith('##') and l.strip() != "":
-                        f.seek(0)
+            with open(database_path / f"{domain}_db.json", "r") as db_file:
+                for line in db_file:
+                    if not line.startswith('##') and line.strip() != "":
+                        db_file.seek(0)
                         break
-                database_data[domain] = json.load(f)
+                database_data[domain] = json.load(db_file)
 
             if domain in self.IGNORE_VALUES:
-                for i in database_data[domain]:
+                for database_item in database_data[domain]:
                     for ignore in self.IGNORE_VALUES[domain]:
-                        if ignore in i:
-                            i.pop(ignore)
+                        if ignore in database_item:
+                            database_item.pop(ignore)
 
             database_keys[domain] = set()
             if domain == 'taxi':
@@ -77,16 +78,26 @@ class MultiWOZDatabase:
         """ Converts time to the only format supported by database, e.g. 07:15. """
         time = time.strip().lower()
 
-        if time == "afternoon": return "13:00"
-        if time == "lunch" or time == "noon" or time == "mid-day" or time == "around lunch time": return "12:00"
-        if time == "morning": return "08:00"
-        if time.startswith("one o'clock p.m"): return "13:00"
-        if time.startswith("ten o'clock a.m"): return "10:00"
-        if time == "seven o'clock tomorrow evening":  return "07:00"
-        if time == "three forty five p.m":  return "15:45"
-        if time == "one thirty p.m.":  return "13:30"
-        if time == "six fourty five":  return "06:45"
-        if time == "eight thirty":  return "08:30"
+        if time == "afternoon":
+            return "13:00"
+        if time == "lunch" or time == "noon" or time == "mid-day" or time == "around lunch time":
+            return "12:00"
+        if time == "morning":
+            return "08:00"
+        if time.startswith("one o'clock p.m"):
+            return "13:00"
+        if time.startswith("ten o'clock a.m"):
+            return "10:00"
+        if time == "seven o'clock tomorrow evening":
+            return "07:00"
+        if time == "three forty five p.m":
+            return "15:45"
+        if time == "one thirty p.m.":
+            return "13:30"
+        if time == "six fourty five":
+            return "06:45"
+        if time == "eight thirty":
+            return "08:30"
 
         if time.startswith("by"):
             time = time[3:]
@@ -97,12 +108,16 @@ class MultiWOZDatabase:
         if time.startswith("afer"):
             time = time[4:].strip()
 
-        if time.endswith("am"):   time = time[:-2].strip()
-        if time.endswith("a.m."): time = time[:-4].strip()
+        if time.endswith("am"):
+            time = time[:-2].strip()
+        if time.endswith("a.m."):
+            time = time[:-4].strip()
 
         if time.endswith("pm") or time.endswith("p.m."):
-            if time.endswith("pm"):   time = time[:-2].strip()
-            if time.endswith("p.m."): time = time[:-4].strip()
+            if time.endswith("pm"):
+                time = time[:-2].strip()
+            if time.endswith("p.m."):
+                time = time[:-4].strip()
             tokens = time.split(':')
             if len(tokens) == 2:
                 return str(int(tokens[0]) + 12) + ':' + tokens[1]
@@ -139,19 +154,20 @@ class MultiWOZDatabase:
         Arguments:
             domain:      Name of the queried domain.
             constraints: Hard constraints to the query results.
+            fuzzy_ratio:
         """
 
         if domain == 'taxi':
-            c, t, p = None, None, None
+            taxi_color, taxi_type, taxi_phone = None, None, None
 
-            c = str(constraints.get('color', []))
-            c = c[0] if len(c) > 0 else random.choice(self.data[domain]['taxi_colors'])
-            t = str(constraints.get('type', []))
-            t = t[0] if len(t) > 0 else random.choice(self.data[domain]['taxi_types'])
-            p = str(constraints.get('phone', []))
-            p = p[0] if len(p) > 0 else ''.join([str(random.randint(1, 9)) for _ in range(11)])
+            taxi_color = str(constraints.get('color', []))
+            taxi_color = taxi_color[0] if len(taxi_color) > 0 else random.choice(self.data[domain]['taxi_colors'])
+            taxi_type = str(constraints.get('type', []))
+            taxi_type = taxi_type[0] if len(taxi_type) > 0 else random.choice(self.data[domain]['taxi_types'])
+            taxi_phone = str(constraints.get('phone', []))
+            taxi_phone = taxi_phone[0] if len(taxi_phone) > 0 else ''.join([str(random.randint(1, 9)) for _ in range(11)])
 
-            return [{'color': c, 'type': t, 'phone': p}]
+            return [{'color': taxi_color, 'type': taxi_type, 'phone': taxi_phone}]
 
         elif domain == 'hospital':
 
@@ -183,57 +199,64 @@ class MultiWOZDatabase:
                 return results
 
         elif domain in self.DOMAINS:
-            # Hotel database keys:      address, area, name, phone, postcode, pricerange, type, internet, parking, stars, takesbookings (other are ignored)
-            # Attraction database keys: address, area, name, phone, postcode, pricerange, type, entrance fee (other are ignored)
-            # Restaurant database keys: address, area, name, phone, postcode, pricerange, type, food
+            # Hotel database keys:
+            #   address, area, name, phone, postcode, pricerange, type, internet, parking, stars, takesbookings
+            #       (other are ignored)
 
-            # Train database contains keys: arriveby, departure, day, leaveat, destination, trainid, price, duration
-            # The keys arriveby, leaveat expect a time format such as 8:45 for 8:45 am
+            # Attraction database keys:
+            #   address, area, name, phone, postcode, pricerange, type, entrance fee (other are ignored)
+
+            # Restaurant database keys:
+            #   address, area, name, phone, postcode, pricerange, type, food
+
+            # Train database contains keys:
+            #   arriveby, departure, day, leaveat, destination, trainid, price, duration
+            #       The keys arriveby, leaveat expect a time format such as 8:45 for 8:45 am
 
             results = []
-            query = {}
+            query_ = {}
 
             if domain == 'attraction' and 'entrancefee' in constraints:
                 constraints['entrance fee'] = constraints.pop('entrancefee')
 
             for key in self.data_keys[domain]:
-                query[key] = constraints.get(key, [])
-                if len(query[key]) > 0 and key in ['arriveby', 'leaveat']:
-                    if isinstance(query[key][0], str):
-                        query[key] = [query[key]]
-                    query[key] = [self.time_str_to_minutes(x) for x in query[key]]
-                    query[key] = list(set(query[key]))
+                query_[key] = constraints.get(key, [])
+                if len(query_[key]) > 0 and key in ['arriveby', 'leaveat']:
+                    if isinstance(query_[key][0], str):
+                        query_[key] = [query_[key]]
+                    query_[key] = [self.time_str_to_minutes(x) for x in query_[key]]
+                    query_[key] = list(set(query_[key]))
 
-            for i, item in enumerate(self.data[domain]):
-                for k, v in query.items():
-                    if k not in item:
+            for i, database_item in enumerate(self.data[domain]):
+                for k, v in query_.items():
+                    if k not in database_item:
                         continue
-                    if len(v) == 0 or item[k] == '?':
+                    if len(v) == 0 or database_item[k] == '?':
                         continue
 
                     if k == 'arriveby':
 
-                        # accept item[k] if it is earlier than times in the query
+                        # accept database_item[k] if it is earlier than times in the query
                         # if the database entry is not ok:
                         #     break
-                        for t in v:
-                            if item[k] != ":":
-                                if item[k] < t:
+                        for taxi_type in v:
+                            if database_item[k] != ":":
+                                if database_item[k] < taxi_type:
                                     break
 
                     elif k == 'leaveat':
 
-                        # accept item[k] if it is later than times in the query
+                        # accept database_item[k] if it is later than times in the query
                         # if the database entry is not ok:
                         #     break
-                        for t in v:
-                            if item[k] != ":":
-                                if item[k] > v[0]:
+                        for taxi_type in v:
+                            if database_item[k] != ":":
+                                if database_item[k] > v[0]:
                                     break
 
                     else:
 
-                        # accept item[k] if it matches to the values in query
+                        # accept database_item[k] if it matches to the values in query
 
                         # Consider using fuzzy matching! See `partial_ratio` method in the fuzzywuzzy library.
                         # Also, take a look into self.FUZZY_KEYS which stores slots suitable for being done in a fuzzy way.
@@ -248,14 +271,14 @@ class MultiWOZDatabase:
                             v = [x.strip().lower() for x in v]
 
                         if k in self.FUZZY_KEYS[domain]:
-                            f = (lambda x: fuzz.partial_ratio(item[k].lower(), x) > fuzzy_ratio)
+                            f = (lambda x: fuzz.partial_ratio(database_item[k].lower(), x) > fuzzy_ratio)
                         else:
-                            f = (lambda x: item[k].lower() == x)
+                            f = (lambda x: database_item[k].lower() == x)
                         if not any(f(x) for x in v):
                             break
 
                 else:  # This gets executed iff the above loop is not terminated
-                    result = copy.deepcopy(item)
+                    result = copy.deepcopy(database_item)
                     if domain in ['train', 'hotel', 'restaurant']:
                         ref = constraints.get('ref', [])
                         result['ref'] = '{0:08d}'.format(i) if len(ref) == 0 else ref

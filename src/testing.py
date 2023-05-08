@@ -1,5 +1,6 @@
 from transformers import RobertaConfig, RobertaModel
 
+"""
 # Initializing a RoBERTa configuration
 configuration = RobertaConfig()
 print(configuration)
@@ -9,4 +10,7 @@ model = RobertaModel(configuration)
 
 # Accessing the model configuration
 configuration = model.config
+"""
+time = "3:45"
 
+print(time.strip().lower())
