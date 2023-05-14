@@ -13,8 +13,6 @@ from tqdm import tqdm
 from database import MultiWOZDatabase
 from transformers import AutoTokenizer
 from constants import *
-from huggingface_multiwoz.dialogue_processing import parse_dialogue_into_examples
-
 logging.basicConfig(level=logging.INFO)
 
 
@@ -80,6 +78,127 @@ def load_data(file_path: Path) -> List[Dict[str, Any]]:
         return data
     else:
         raise FileNotFoundError(f"Data file not found at {file_path.with_suffix('.json')}")
+
+
+def parse_dialogue_into_examples(dialogue: Dict[str, Any],
+                                 dialogue_domain: str,
+                                 database: MultiWOZDatabase,
+                                 context_len: Optional[int] = None,
+                                 strip_domain: bool = False) -> List[Dict[str, Any]]:
+    """
+    Parse a dialogue into training examples.
+
+    Args:
+        dialogue (Dict[str, Any]): The dialogue to be parsed.
+        dialogue_domain (str): The dialogue domain (e.g., 'restaurant', 'hotel', etc.).
+        database (MultiWOZDatabase): The database instance used for querying.
+        context_len (Optional[int], optional): The maximum length of the context. Defaults to None.
+        strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
+    Returns:
+        List[Dict[str, Any]]: A list of training examples.
+    """
+    examples = []
+    turns = dialogue['turns']
+
+    example = dict()
+    belief_state = {domain: {slot: 'None' for slot in DOMAIN_SLOTS[domain]} for domain in DOMAIN_NAMES}
+
+    for turn_id, _ in enumerate(turns['turn_id']):
+        speaker = turns['speaker'][turn_id]
+
+        # USER
+        if speaker == 0:
+            # Process user turn and update belief state
+            logging.debug(f"Processing system turn with turn_id={turn_id}")
+
+            # Extract the user's utterance
+            utterance = turns['utterance'][turn_id]
+
+            # Create an example with the user's utterance and the current belief state
+            example = {
+                'utterance': utterance,
+                'old_belief_state': copy.deepcopy(belief_state),
+                'domain': dialogue_domain
+            }
+
+            # Update the belief state based on the user's utterance
+            frame = turns['frames'][turn_id]
+
+            # Extract the domains and states from the frame
+            domains = frame['service']
+            states = frame['state']
+
+            # Iterate through each domain and state
+            for domain, state in zip(domains, states):
+                # Extract the slot names and values from the state
+                slots = state['slots_values']['slots_values_name']
+                values = state['slots_values']['slots_values_list']
+
+                # Create a dictionary of slot-value pairs
+                slot_value_pairs = {slot: value[0] for slot, value in zip(slots, values)}
+
+                # Update the belief state with the new slot-value pairs
+                belief_state[domain].update(slot_value_pairs)
+
+            # Create a state update by comparing the old and new belief states
+            # state_update = create_state_update(belief_state, example['old_belief_state'])
+
+            # Get the database results for the updated belief state
+            # database_results = get_database_results(database, belief_state)
+
+            # Update the example with the new belief state and database results
+            example.update({
+                'new_belief_state': copy.deepcopy(belief_state),
+                # 'state_update': state_update,
+                # 'database_results': database_results
+            })
+
+        # SYSTEM
+        else:
+            # Process system turn and create an example
+            logging.debug(f"Processing system turn with turn_id={turn_id}")
+
+            # Get the current system utterance and dialogue acts
+            utterance = turns['utterance'][turn_id]
+            dialogue_acts = turns['dialogue_acts'][turn_id]
+
+            # Extract action types and slot names from the dialogue acts
+            act_type_slot_name_pairs = []
+            act_types = dialogue_acts['dialog_act']['act_type']
+            act_slots = dialogue_acts['dialog_act']['act_slots']
+
+            for act_type, act_slot in zip(act_types, act_slots):
+                if strip_domain:
+                    act_type = '-'.join([x for x in act_type.split('-') if x not in DOMAIN_NAMES])
+
+                slot_names = act_slot['slot_name']
+                slot_values = act_slot['slot_value']
+
+                for slot_name in slot_names:
+                    act_type_slot_name_pairs.append(
+                        f'{act_type}{"-" if slot_name != "none" else ""}{slot_name if slot_name != "none" else ""}'
+                    )
+
+            # Create the dialogue context
+            context = turns['utterance'][:turn_id - 1]
+            if context_len is not None and len(context) > context_len:
+                if context_len > 0:
+                    context = context[-context_len:]
+                else:
+                    context = []
+
+            # Update the example dictionary with the new information
+            example.update({
+                'context': context,
+                'actions': sorted(list(set(act_type_slot_name_pairs))),
+                'system_utterance': utterance,
+            })
+
+            # Append the example to the list of examples
+            examples.append(example)
+
+    return examples
 
 
 def load_multiwoz_dataset(split: str,
