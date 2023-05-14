@@ -5,13 +5,15 @@ import datasets
 import numpy as np
 import pandas as pd
 import copy
-from typing import Optional, List, Any, Tuple, Union
+from typing import Optional, List, Any, Tuple, Union, Dict
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
 from database import MultiWOZDatabase
 from transformers import AutoTokenizer
 from constants import *
+from huggingface_multiwoz.dialogue_processing import parse_dialogue_into_examples
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,159 +27,75 @@ def _compute_metrics(eval_pred):
             "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
 
 
-def save_data(data: list[list[dict]], file_path: Path, force: bool = False):
+from typing import List, Dict, Any
+from pathlib import Path
+import logging
+import pickle
+import pandas as pd
+
+
+def save_data(data: List[Dict[str, Any]], file_path: Path, append: bool = False) -> None:
     """
-        Save data to disk as both JSON and CSV files.
+    Save data to disk as both JSON and CSV files.
 
-        Args:
-            data (list[list[dict]]): A list of lists of dictionaries containing data to be saved.
-            file_path (Path): A pathlib.Path object representing the path to save the files to.
-            force (bool, optional): Whether to overwrite an existing file with the same path. Defaults to False.
+    Args:
+        data (List[Dict[str, Any]]): A list of dictionaries containing data to be saved.
+        file_path (Path): A pathlib.Path object representing the path to save the files to.
+        append (bool, optional): Whether to append data to an existing file or overwrite the file. Defaults to False.
+    """
 
-        Raises:
-            AssertionError: If the `file_path` already exists and `force` is False.
+    # If append is True and the file already exists, load the existing data and extend it with the new data
+    if append and file_path.with_suffix('.json').is_file():
+        with open(file_path.with_suffix('.json'), 'rb') as f:
+            existing_data = pickle.load(f)
+        data = existing_data + data
 
-        Returns:
-            None
-        """
-    if not force:
-        assert not file_path.exists(), f"{file_path} already exists."
+    # Save the (extended) data as a JSON file using 'wb' mode
     with open(file_path.with_suffix('.json'), 'wb') as f:
         pickle.dump(data, f)
 
+    # Convert the data to a DataFrame and save it as a CSV file
     df = pd.DataFrame(data)
-    df.to_csv(file_path.with_suffix('.csv'), index=False)
+    write_header = not append or not file_path.with_suffix('.csv').is_file()
+    df.to_csv(file_path.with_suffix('.csv'), index=False, mode=('a' if append else 'w'), header=write_header)
+
+    logging.debug(f"Data saved to {file_path.with_suffix('.json')} and {file_path.with_suffix('.csv')}")
 
 
-def parse_dialogue_into_examples(dialogue, dialogue_domain: str, database: MultiWOZDatabase, context_len: int = None,
-                                 strip_domain: bool = False) -> list[dict]:
+def load_data(file_path: Path) -> List[Dict[str, Any]]:
     """
-    Parses a dialogue into a list of examples.
-    Each example is a dictionary of the following structure:
-    {
-        'context': list[str],  # list of utterances preceding the current utterance
-        'utterance': str,  # the string with the current user response
-        'delex_utterance': str,  # the string with the current user response which is delexicalized, i.e. slot
-                                values are
-                                # replaced by corresponding slot names in the text.
-        'belief_state': dict[str, dict[str, str]],  # belief state dictionary, for each domain a separate belief state dictionary,
-                                                    # choose a single slot value if more than one option is available
-        'database_results': dict[str, int] # dictionary containing the number of matching results per domain
-    }
-    The context can be truncated to k last utterances.
+    Load data from a JSON file.
 
+    Args:
+        file_path (Path): A pathlib.Path object representing the path to the JSON file.
 
-    Existing services:
-        {'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'}
-    Existing intents:
-        {'find_bus', 'find_train', 'find_restaurant', 'find_attraction', 'book_hotel', 'find_taxi',
-        'find_police', 'book_train', 'find_hotel', 'find_hospital', 'book_restaurant'}
-    Existing slots_values_names:
-        {'bus-departure', 'hotel-pricerange', 'train-departure', 'hotel-bookstay', 'hotel-bookday',
-        'restaurant-bookpeople', 'restaurant-booktime', 'restaurant-pricerange', 'attraction-type',
-        'restaurant-name', 'bus-destination', 'train-bookpeople', 'hotel-area', 'taxi-departure',
-        'taxi-destination', 'attraction-area', 'attraction-name', 'restaurant-area', 'taxi-arriveby',
-        'hotel-stars', 'restaurant-bookday', 'taxi-leaveat', 'hotel-bookpeople', 'restaurant-food',
-        'train-destination', 'hospital-department', 'hotel-parking', 'hotel-type', 'train-leaveat',
-        'bus-leaveat', 'train-day', 'hotel-name', 'hotel-internet', 'train-arriveby', 'bus-day'}
+    Returns:
+        List[Dict[str, Any]]: A list of dictionaries containing the loaded data.
+
+    Raises:
+        FileNotFoundError: If the JSON file is not found at the specified path.
     """
 
-    examples = []
-    turns = dialogue['turns']
+    # Check if the JSON file exists
+    if file_path.with_suffix('.json').is_file():
+        logging.info(f"Loading data from {file_path.with_suffix('.json')}")
 
-    example = dict()
-    belief_state = {domain: {slot: 'None' for slot in DOMAIN_SLOTS[domain]} for domain in DOMAIN_NAMES}
-    for turn_id, _ in enumerate(turns['turn_id']):
-        speaker = turns['speaker'][turn_id]
-        utterance = turns['utterance'][turn_id]
+        # Load data from the JSON file
+        with open(file_path.with_suffix('.json'), "rb") as f:
+            data = pickle.load(f)
 
-        # USER
-        if speaker == 0:
-            # Create example instance with user utterance and old belief state, i.e. belief state, which is in the
-            # input to our model. It represents the belief state of our system after the previous turn and will be on
-            # the output in the previous turn.
-            example = {
-                'utterance': utterance,
-                'old_belief_state': copy.deepcopy(belief_state),
-                'domain': dialogue_domain
-            }
-            frame = turns['frames'][turn_id]
-            domains = frame['service']
-            states = frame['state']
-
-            # Update the belief state with this new user utterance
-            for domain, state in zip(domains, states):
-                slots = state['slots_values']['slots_values_name']
-                values = state['slots_values']['slots_values_list']
-
-                slot_value_pairs = {slot: value[0] for slot, value in zip(slots, values)}
-                belief_state[domain].update(slot_value_pairs)
-
-            # Create state update, which is a dictionary with the same structure as belief state but with only those
-            # keys and values that changed from the old belief state to the new one
-            state_update = dict()
-            old_belief_state = example['old_belief_state']
-            for domain, state in belief_state.items():
-                state_update[domain] = {slot: value for slot, value in state.items() if
-                                        slot not in old_belief_state.get(domain, {}) or
-                                        old_belief_state[domain][slot] != value}
-
-            # Get database results sizes for each domain
-            database_results = {domain: len(database.query(domain, domain_state))
-                                for domain, domain_state in belief_state.items()}
-
-            # From the USER we use:
-            #   - 'utterance': what the user said in the current turn
-            #   - 'belief_state': the belief state of the user side of the conversation
-            example.update({'new_belief_state': copy.deepcopy(belief_state),
-                            # 'state_update': copy.deepcopy(state_update),
-                            'database_results': copy.deepcopy(database_results)
-                            })
-
-        # SYSTEM
-        else:
-            dialogue_acts = turns['dialogue_acts'][turn_id]
-            act_type_slot_name_pairs = []
-            act_types = dialogue_acts['dialog_act']['act_type']
-            act_slots = dialogue_acts['dialog_act']['act_slots']
-            for act_type, act_slot in zip(act_types, act_slots):
-                if strip_domain:
-                    act_type = '-'.join([x for x in act_type.split('-') if x not in DOMAIN_NAMES])
-
-                slot_names = act_slot['slot_name']
-                slot_values = act_slot['slot_value']
-
-                for slot_name in slot_names:
-                    act_type_slot_name_pairs.append(f'{act_type}{"-" if slot_name != "none" else ""}'
-                                                    f'{slot_name if slot_name != "none" else ""}')
-
-            context = turns['utterance'][:turn_id - 1]
-            if context_len is not None and len(context) > context_len:
-                if context_len > 0:
-                    context = context[-context_len:]
-
-                else:
-                    context = []
-            # From the SYSTEM we use:
-            #   - 'context': the last `context_len` turns of the dialogue ending with the last system utterance.
-            #                context together with user utterance and their belief state create input to the model
-            #   - 'actions': the goal actions the model should predict from the input. It represents the SYSTEM's
-            #                decision of what to do next
-            #   - 'system_utterance': the SYSTEM's response based on the 'actions'. This is not used in our model in
-            #                         any way, but it's a good idea to store it as well for manual control.
-            example.update({
-                'context': context,
-                'actions': list(set(act_type_slot_name_pairs)),
-                'system_utterance': utterance,
-            })
-            examples.append(example)
-
-    return examples
+        return data
+    else:
+        raise FileNotFoundError(f"Data file not found at {file_path.with_suffix('.json')}")
 
 
-def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: int = None,
+def load_multiwoz_dataset(split: str,
+                          domains: List[str] = None,
+                          context_len: Optional[int] = None,
                           only_single_domain: bool = False,
-                          data_path: Union[Path, str] = "/home/safar/HCN/data/huggingface_data") -> pd.DataFrame:
+                          data_path: Union[Path, str] = "data/huggingface_data",
+                          strip_domain: bool = False,
+                          save_interval: int = 1000) -> pd.DataFrame:
     """
     Load and preprocess the MultiWOZ 2.2 dataset using the HuggingFace datasets library.
 
@@ -187,14 +105,16 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
         context_len (int, optional): The maximum length of the conversation history to keep for each example.
         only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
         data_path (Union[Path, str], optional): The path to the directory where the preprocessed data should be saved.
+        strip_domain (bool, optional): Whether to remove domain prefixes from slot names in the dataset.
+        save_interval (int, optional): The number of dialogues to process before saving the data to a file.
 
     Returns:
         pd.DataFrame: A Pandas DataFrame containing the preprocessed dataset.
 
     Raises:
         FileNotFoundError: If the MultiWOZDatabase cannot be found at the specified path.
-
     """
+
     logging.info(f"Loading MultiWOZ dataset, split={split}, domains={domains}, context_len={context_len}, "
                  f"only_single_domain={only_single_domain}, data_path={data_path}")
 
@@ -207,7 +127,7 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
     domains.sort()
 
     # Create cache directory path and database directory path from data path
-    cache_path = Path(data_path) / "cached_datasets"
+    cache_path = Path(data_path) / "cache"
     database_path = Path(data_path) / "database"
 
     cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
@@ -224,8 +144,7 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
     # If the dataset has already been preprocessed, load it from the cache
     if file_path.with_suffix('.json').is_file():
         logging.info(f"Loading {split} from cached file.")
-        with open(file_path.with_suffix('.json'), "rb") as f:
-            data = pickle.load(f)
+        data = load_data(file_path)
 
     # Else, load MultiWoz 2.2 dataset from HuggingFace, create data and save them into a cache directory
     else:
@@ -237,7 +156,9 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
         # Load MultiWoz Database, which is locally saved at database_path
         database = MultiWOZDatabase(database_path)
 
-        data = []
+        batch_data = []
+        dialogue_counter = 0
+
         # Iterate through dialogues in the dataset, preprocessing each dialogue
         for dialogue in tqdm(multi_woz_dataset, desc=f"Preprocessing {split} data", unit="dialogue", ncols=100):
             if only_single_domain and len(dialogue['services']) != 1:
@@ -251,10 +172,24 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
                 dialogue_domain = dialogue['services'][0]
             else:
                 dialogue_domain = ''
-            data.extend(parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain, database=database,
-                                                     context_len=context_len))
 
-        save_data(data, file_path)
+            processed_dialogue = parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain,
+                                                              database=database, context_len=context_len,
+                                                              strip_domain=strip_domain)
+            if processed_dialogue:
+                batch_data.extend(processed_dialogue)
+                dialogue_counter += 1
+
+                if dialogue_counter % save_interval == 0:
+                    save_data(batch_data, file_path, append=True)
+                    batch_data = []
+
+            # Save remaining dialogues
+            if batch_data:
+                save_data(batch_data, file_path, append=True)
+
+        # Load data from saved files to create DataFrame
+        data = load_data(file_path)
 
     df = pd.DataFrame(data)
     df.dropna(inplace=True)
@@ -284,8 +219,24 @@ class MultiWOZDataset:
                  additional_special_tokens: List[str] = None,
                  data_path: str = "../huggingface_data",
                  domains: List[str] = None,
-                 only_single_domain: bool = False
-                 ):
+                 only_single_domain: bool = False,
+                 batch_size: int = 32):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            label_column (str): The name of the label column in the dataset.
+            use_columns (List[str]): A list of columns to use in the dataset.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_seq_length (int, optional): The maximum sequence length for tokenized input.
+            val_size (float, optional): The proportion of the dataset to use for validation.
+            additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
+            data_path (str, optional): The path to the directory where the preprocessed data should be saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+        """
         super().__init__()
         self.tokenizer_name = tokenizer_name
         self.label_column = label_column
@@ -295,13 +246,14 @@ class MultiWOZDataset:
         self.val_size = val_size
         self.domains = domains
         self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
 
         # Initialize pretrained tokenizer and register all the special tokens
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True,
                                                        additional_special_tokens=additional_special_tokens)
 
-        print(f"Special tokens: {self.tokenizer.additional_special_tokens}")
-        print(f"Domains: {self.domains}")
+        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
+        logging.info(f"Domains: {self.domains}")
 
         # Load train/val/test datasets into DataFrames
         train_df = load_multiwoz_dataset('train', context_len=self.context_len, data_path=data_path,
@@ -314,14 +266,14 @@ class MultiWOZDataset:
         # Gather unique labels which are used in 'label' <-> 'integers' map
         unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
 
-        # The 'label' <-> 'integers' map is saved into 'label2id' and 'id2label' dictionaries and saved as a part
-        # of the model in model config file.
-        self.label2id = {'<UNK_ACT>': 0}
-        self.label2id.update({v: k for k, v in enumerate(unique_actions, start=1)})
-        self.id2label = {v: k for k, v in self.label2id.items()}
-        self.num_labels = len(self.label2id)
-        print(f"Labels are: \n {self.label2id.keys()}")
-        print(f"Number of labels is: {self.num_labels}")
+        # Initialize LabelEncoder and fit it with the unique labels
+        self.label_encoder = LabelEncoder()
+        self.label_encoder.fit(['<UNK_ACT>'] + unique_actions)
+
+        # Get the number of unique labels
+        self.num_labels = len(self.label_encoder.classes_)
+        logging.debug(f"Labels are: \n {self.label_encoder.classes_}")
+        logging.info(f"Number of labels is: {self.num_labels}")
 
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)
@@ -335,20 +287,19 @@ class MultiWOZDataset:
             'val': val_dataset}
         )
 
-    def create_huggingface_dataset(self, df: pd.DataFrame, batch_size: int = 32) -> datasets.Dataset:
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
         """
         Creates HuggingFace dataset from pandas DataFrame
         :param df: input DataFrame
-        :param batch_size:
         :return: output HuggingFace dataset
         """
         # Create HuggingFace dataset from Dataset
         dataset = datasets.Dataset.from_pandas(df)
 
         # Map dataset using the 'tokenize_function'
-        dataset = dataset.map(self.tokenize_function, batched=True, batch_size=batch_size)
+        dataset = dataset.map(self.tokenize_function, batched=True, batch_size=self.batch_size)
 
-        dataset = dataset.map(self.cast_labels, batched=True, batch_size=batch_size)
+        dataset = dataset.map(self.cast_labels, batched=True, batch_size=self.batch_size)
 
         return dataset
 
@@ -367,9 +318,15 @@ class MultiWOZDataset:
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
         return tokenized
 
-    def map_labels_to_ids(self, actions: list[str]) -> list[int]:
-        output = [self.label2id.get(a, 0) for a in actions]
+    def map_labels_to_ids(self, actions: List[str]) -> List[int]:
+        output = self.label_encoder.transform(actions)
         return output
+
+    def get_id2label(self) -> dict[int, str]:
+        return {self.label_encoder.transform(label): label for label in self.label_encoder.classes_}
+
+    def get_label2id(self) -> dict[str, int]:
+        return {label: self.label_encoder.transform(label) for label in self.label_encoder.classes_}
 
     def cast_labels(self, example_batch):
         labels = np.zeros((len(example_batch['actions']), self.num_labels))

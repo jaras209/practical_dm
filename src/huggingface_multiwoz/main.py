@@ -19,6 +19,7 @@ def main(args):
     multiwoz_dataset = MultiWOZDataset(tokenizer_name=args.tokenizer_name,
                                        label_column='actions',
                                        use_columns=['actions', 'utterance'],
+                                       context_len=args.context_len,
                                        max_seq_length=args.max_seq_length,
                                        additional_special_tokens=SPECIAL_TOKENS,
                                        data_path=args.data_path,
@@ -65,6 +66,7 @@ if __name__ == "__main__":
                              "model is used for training. ")
     parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
+    parser.add_argument("--context_len", default=1, type=int, help="Number of previous turns to use as context.")
     parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=None, type=int, help="Max seq length of input to transformer")
     parser.add_argument("--epochs", default=2, type=int, help="Number of epochs.")
