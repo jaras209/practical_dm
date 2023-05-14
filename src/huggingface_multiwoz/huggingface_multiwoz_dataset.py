@@ -1,3 +1,4 @@
+import logging
 import pickle
 from pathlib import Path
 import datasets
@@ -6,12 +7,16 @@ import pandas as pd
 import copy
 from typing import Optional, List, Any, Tuple, Union
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
+from tqdm import tqdm
+
 from database import MultiWOZDatabase
 from transformers import AutoTokenizer
 from constants import *
 
+logging.basicConfig(level=logging.INFO)
 
-def compute_metrics(eval_pred):
+
+def _compute_metrics(eval_pred):
     logits, y_true = eval_pred
     y_pred = (logits >= 0).astype(np.float32)
     return {"accuracy": accuracy_score(y_true=y_true, y_pred=y_pred),
@@ -20,12 +25,28 @@ def compute_metrics(eval_pred):
             "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
 
 
-def save_data(data, file_path: Path):
-    assert not file_path.exists(), f"{file_path} already exists."
-    with open(f"{file_path}.json", 'wb+') as f:
+def save_data(data: list[list[dict]], file_path: Path, force: bool = False):
+    """
+        Save data to disk as both JSON and CSV files.
+
+        Args:
+            data (list[list[dict]]): A list of lists of dictionaries containing data to be saved.
+            file_path (Path): A pathlib.Path object representing the path to save the files to.
+            force (bool, optional): Whether to overwrite an existing file with the same path. Defaults to False.
+
+        Raises:
+            AssertionError: If the `file_path` already exists and `force` is False.
+
+        Returns:
+            None
+        """
+    if not force:
+        assert not file_path.exists(), f"{file_path} already exists."
+    with open(file_path.with_suffix('.json'), 'wb') as f:
         pickle.dump(data, f)
 
-    pd.DataFrame(data).to_csv(f"{file_path}.csv")
+    df = pd.DataFrame(data)
+    df.to_csv(file_path.with_suffix('.csv'), index=False)
 
 
 def parse_dialogue_into_examples(dialogue, dialogue_domain: str, database: MultiWOZDatabase, context_len: int = None,
@@ -109,8 +130,9 @@ def parse_dialogue_into_examples(dialogue, dialogue_domain: str, database: Multi
             #   - 'utterance': what the user said in the current turn
             #   - 'belief_state': the belief state of the user side of the conversation
             example.update({'new_belief_state': copy.deepcopy(belief_state),
-                            'state_update': copy.deepcopy(state_update),
-                            'database_results': copy.deepcopy(database_results)})
+                            # 'state_update': copy.deepcopy(state_update),
+                            'database_results': copy.deepcopy(database_results)
+                            })
 
         # SYSTEM
         else:
@@ -157,25 +179,41 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
                           only_single_domain: bool = False,
                           data_path: Union[Path, str] = "/home/safar/HCN/data/huggingface_data") -> pd.DataFrame:
     """
-    Load the MultiWoz dataset using huggingface.datasets.
-    Able to shorten the context length by setting context_len.
+    Load and preprocess the MultiWOZ 2.2 dataset using the HuggingFace datasets library.
+
+    Args:
+        split (str): Which subset of the dataset to load (train, test, or validation).
+        domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+        context_len (int, optional): The maximum length of the conversation history to keep for each example.
+        only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+        data_path (Union[Path, str], optional): The path to the directory where the preprocessed data should be saved.
+
+    Returns:
+        pd.DataFrame: A Pandas DataFrame containing the preprocessed dataset.
+
+    Raises:
+        FileNotFoundError: If the MultiWOZDatabase cannot be found at the specified path.
+
     """
-    if domains is None:
+    logging.info(f"Loading MultiWOZ dataset, split={split}, domains={domains}, context_len={context_len}, "
+                 f"only_single_domain={only_single_domain}, data_path={data_path}")
+
+    if not domains:
         # If no domains are specified, we use all of them
         domains = list(DOMAIN_NAMES)
+        logging.debug(f"Using all domains: {domains}")
 
     # Sort domains to always get the same order of in the paths and file names below
     domains.sort()
 
     # Create cache directory path and database directory path from data path
     cache_path = Path(data_path) / "cached_datasets"
-    database_path = Path(data_path) / "databases"
+    database_path = Path(data_path) / "database"
 
     cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
-    print(f"Cache dir = {Path(cache_path).absolute()}")
 
     # Create cache directory, if it doesn't exist
-    cache_path.mkdir(exist_ok=True)
+    cache_path.mkdir(exist_ok=True, parents=True)
 
     # Create file path for current split (train/test/val)
     file_path = cache_path / f"{split}_preprocessed_data_{'-'.join(domains)}"
@@ -184,13 +222,15 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
     domains = set(domains)
 
     # If the dataset has already been preprocessed, load it from the cache
-    if file_path.is_file():
-        data = pickle.load(open(f"{file_path}.json", 'rb'))
-        print(f"Loaded {len(data)} examples from cached file.")
+    if file_path.with_suffix('.json').is_file():
+        logging.info(f"Loading {split} from cached file.")
+        with open(file_path.with_suffix('.json'), "rb") as f:
+            data = pickle.load(f)
 
     # Else, load MultiWoz 2.2 dataset from HuggingFace, create data and save them into a cache directory
     else:
         # Load MultiWoz dataset from HuggingFace
+        logging.info(f"Preprocessing {split} data and saving it to {file_path}.")
         multi_woz_dataset = datasets.load_dataset(path='multi_woz_v22', split=split, ignore_verifications=True,
                                                   streaming=True)
 
@@ -199,7 +239,7 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len: in
 
         data = []
         # Iterate through dialogues in the dataset, preprocessing each dialogue
-        for dialogue in multi_woz_dataset:
+        for dialogue in tqdm(multi_woz_dataset, desc=f"Preprocessing {split} data", unit="dialogue", ncols=100):
             if only_single_domain and len(dialogue['services']) != 1:
                 continue
 

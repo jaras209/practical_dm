@@ -3,6 +3,20 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
+        <entry key="$USER_HOME$/Desktop/ner_feature_files/002d1473-259b-494f-b00d-74c9515a2417_tdf_0.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Desktop/ner_feature_files/00a1f2c0-4f34-4c19-8555-f7e6bbaddea3_tdf_0.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/classification_model_2/val_predictions.csv">
           <value>
             <Attribute>
