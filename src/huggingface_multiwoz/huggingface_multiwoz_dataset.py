@@ -25,7 +25,7 @@ def _compute_metrics(eval_pred):
             "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
 
 
-def save_data(data: list[list[dict]], file_path: Path, force: bool = False):
+def save_data(data: list[[dict]], file_path: Path, force: bool = False):
     """
         Save data to disk as both JSON and CSV files.
 
@@ -123,15 +123,15 @@ def parse_dialogue_into_examples(dialogue, dialogue_domain: str, database: Multi
                                         old_belief_state[domain][slot] != value}
 
             # Get database results sizes for each domain
-            database_results = {domain: len(database.query(domain, domain_state))
-                                for domain, domain_state in belief_state.items()}
+            # database_results = {domain: len(database.query(domain, domain_state))
+            #                     for domain, domain_state in belief_state.items()}
 
             # From the USER we use:
             #   - 'utterance': what the user said in the current turn
             #   - 'belief_state': the belief state of the user side of the conversation
             example.update({'new_belief_state': copy.deepcopy(belief_state),
                             # 'state_update': copy.deepcopy(state_update),
-                            'database_results': copy.deepcopy(database_results)
+                            # 'database_results': copy.deepcopy(database_results)
                             })
 
         # SYSTEM
