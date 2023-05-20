@@ -110,7 +110,7 @@ def process_user_turn(turn_id: int,
         Tuple[Dict, Dict[str, Dict[str, str]]]: A tuple containing the updated example dictionary and the
                                                 updated belief state.
     """
-    logging.debug(f"Processing system turn with turn_id={turn_id}")
+    # logging.debug(f"Processing system turn with turn_id={turn_id}")
 
     # Extract the user's utterance
     utterance = turns['utterance'][turn_id]
@@ -127,16 +127,16 @@ def process_user_turn(turn_id: int,
     belief_state = update_belief_state(belief_state, frame)
 
     # Create a state update by comparing the old and new belief states
-    state_update = create_state_update(belief_state, example['old_belief_state'])
+    # state_update = create_state_update(belief_state, example['old_belief_state'])
 
     # Get the database results for the updated belief state
-    database_results = get_database_results(database, belief_state)
+    # database_results = get_database_results(database, belief_state)
 
     # Update the example with the new belief state and database results
     example.update({
         'new_belief_state': copy.deepcopy(belief_state),
-        'state_update': state_update,
-        'database_results': database_results
+        # 'state_update': state_update,
+        # 'database_results': database_results
     })
 
     return example, belief_state
@@ -212,7 +212,7 @@ def process_system_turn(turn_id: int,
     # Update the example dictionary with the new information
     example.update({
         'context': context,
-        'actions': sorted(list(set(act_type_slot_name_pairs))),
+        'actions': list(set(act_type_slot_name_pairs)),
         'system_utterance': utterance,
     })
 
@@ -250,7 +250,7 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
         if speaker == 0:
             # Process user turn and update belief state
             example, belief_state = process_user_turn(turn_id, turns, belief_state, dialogue_domain, database)
-
+            print(belief_state)
         # SYSTEM
         else:
             # Process system turn and create an example
