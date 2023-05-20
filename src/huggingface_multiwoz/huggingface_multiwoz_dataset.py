@@ -300,6 +300,97 @@ def load_data(file_path: Path) -> List[Dict[str, Any]]:
         raise FileNotFoundError(f"Data file not found at {file_path.with_suffix('.json')}")
 
 
+def load_multiwoz_dataset_old(split: str,
+                              domains: List[str] = None,
+                              context_len: int = None,
+                              only_single_domain: bool = False,
+                              data_path: Union[Path, str] = "/home/safar/HCN/data/huggingface_data",
+                              strip_domain: bool = False,
+                              save_interval: int = 1000) -> pd.DataFrame:
+    """
+    Load and preprocess the MultiWOZ 2.2 dataset using the HuggingFace datasets library.
+
+    Args:
+        split (str): Which subset of the dataset to load (train, test, or validation).
+        domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+        context_len (int, optional): The maximum length of the conversation history to keep for each example.
+        only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+        data_path (Union[Path, str], optional): The path to the directory where the preprocessed data should be saved.
+
+    Returns:
+        pd.DataFrame: A Pandas DataFrame containing the preprocessed dataset.
+
+    Raises:
+        FileNotFoundError: If the MultiWOZDatabase cannot be found at the specified path.
+
+    """
+    logging.info(f"Loading MultiWOZ dataset, split={split}, domains={domains}, context_len={context_len}, "
+                 f"only_single_domain={only_single_domain}, data_path={data_path}")
+
+    if not domains:
+        # If no domains are specified, we use all of them
+        domains = list(DOMAIN_NAMES)
+        logging.debug(f"Using all domains: {domains}")
+
+    # Sort domains to always get the same order of in the paths and file names below
+    domains.sort()
+
+    # Create cache directory path and database directory path from data path
+    cache_path = Path(data_path) / "cached_datasets"
+    database_path = Path(data_path) / "database"
+
+    cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
+
+    # Create cache directory, if it doesn't exist
+    cache_path.mkdir(exist_ok=True, parents=True)
+
+    # Create file path for current split (train/test/val)
+    file_path = cache_path / f"{split}_preprocessed_data_{'-'.join(domains)}"
+
+    # Turn list of domains into a set to be used in subset queries in filtering dialogues containing only these domains
+    domains = set(domains)
+
+    # If the dataset has already been preprocessed, load it from the cache
+    if file_path.with_suffix('.json').is_file():
+        logging.info(f"Loading {split} from cached file.")
+        with open(file_path.with_suffix('.json'), "rb") as f:
+            data = pickle.load(f)
+
+    # Else, load MultiWoz 2.2 dataset from HuggingFace, create data and save them into a cache directory
+    else:
+        # Load MultiWoz dataset from HuggingFace
+        logging.info(f"Preprocessing {split} data and saving it to {file_path}.")
+        multi_woz_dataset = datasets.load_dataset(path='multi_woz_v22', split=split, ignore_verifications=True,
+                                                  streaming=True)
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database = MultiWOZDatabase(database_path)
+
+        data = []
+        # Iterate through dialogues in the dataset, preprocessing each dialogue
+        for dialogue in tqdm(multi_woz_dataset, desc=f"Preprocessing {split} data", unit="dialogue", ncols=100):
+            if only_single_domain and len(dialogue['services']) != 1:
+                continue
+
+            # Use only those dialogues containing allowed domains and parse them into examples
+            if not set(dialogue['services']).issubset(domains):
+                continue
+
+            if len(dialogue['services']) > 0:
+                dialogue_domain = dialogue['services'][0]
+            else:
+                dialogue_domain = ''
+            data.extend(parse_dialogue_into_examples_old(dialogue, dialogue_domain=dialogue_domain, database=database,
+                                                         context_len=context_len))
+
+        save_data(data, file_path)
+
+    df = pd.DataFrame(data)
+    df.dropna(inplace=True)
+
+    return df
+
+
 def load_multiwoz_dataset(split: str,
                           domains: List[str] = None,
                           context_len: Optional[int] = None,
