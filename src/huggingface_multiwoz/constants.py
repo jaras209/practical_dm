@@ -1,3 +1,4 @@
+UNK_ACTION = 'UNK'
 BELIEF = '<|BELIEF|>'
 CONTEXT = '<|CONTEXT|>'
 USER = '<|USER|>'

@@ -90,8 +90,8 @@ def train(multiwoz_dataset: MultiWOZDataset,
     # Create the model to train.
     model = AutoModelForSequenceClassification.from_pretrained(pretrained_model,
                                                                num_labels=multiwoz_dataset.num_labels,
-                                                               id2label=multiwoz_dataset.id2label,
-                                                               label2id=multiwoz_dataset.label2id,
+                                                               id2label=multiwoz_dataset.get_id2label(),
+                                                               label2id=multiwoz_dataset.get_label2id(),
                                                                problem_type="multi_label_classification").to(device)
 
     # Create TrainingArguments to access all the points of customization for the training.

@@ -30,7 +30,6 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
     """
     predicted_dialogue_acts = []
     for i, (labels, dataset_element) in enumerate(zip(predicted_labels, dataset)):
-        domain = dataset_element['domain']
         belief_state = dataset_element['new_belief_state']
 
         dialogue_acts = []

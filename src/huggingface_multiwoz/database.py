@@ -144,14 +144,14 @@ class MultiWOZDatabase:
         return time
 
     def query(self,
-              domain: Text,
-              constraints: Dict[Text, Text],
+              domain: str,
+              constraints: Dict[str, str],
               fuzzy_ratio: int = 90):
         """
         Returns the list of entities (dictionaries) for a given domain based on the annotation of the belief state.
 
         Arguments:
-            domain:      Name of the queried domain.
+            domain: Name of the queried domain.
             constraints: Hard constraints to the query results.
             fuzzy_ratio:
         """
