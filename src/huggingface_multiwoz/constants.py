@@ -4,6 +4,7 @@ CONTEXT = '<|CONTEXT|>'
 USER = '<|USER|>'
 SPECIAL_TOKENS = [BELIEF, CONTEXT, USER]
 DOMAIN_NAMES = {'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'}
+# TODO: probably need to verify that these are all the slots
 DOMAIN_SLOTS = dict(bus={'bus-departure', 'bus-destination', 'bus-leaveat', 'bus-day'},
                     hotel={'hotel-pricerange', 'hotel-bookstay', 'hotel-bookday', 'hotel-area', 'hotel-stars',
                            'hotel-bookpeople', 'hotel-parking', 'hotel-type', 'hotel-name', 'hotel-internet'},

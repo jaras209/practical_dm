@@ -51,7 +51,10 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
                 slot = None
 
             # Query the domain to get the full dialogue act.
-            query_result = database.query(domain, belief_state)
+            # TODO: má to být belief_state[domain]? Nebo celý
+            #  belief_state? Podle struktury toho argumentu spíš to první. Promyslet!! Možná využívat tu
+            #  `get_database_results` funkci
+            query_result = database.query(domain, belief_state[domain])
 
             # Use the extracted domain, action, and slot to process the query_result and extend the label.
             if slot is not None:

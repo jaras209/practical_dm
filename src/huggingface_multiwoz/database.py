@@ -143,59 +143,98 @@ class MultiWOZDatabase:
 
         return time
 
-    def query(self,
-              domain: str,
-              constraints: Dict[str, str],
-              fuzzy_ratio: int = 90):
+    def query(self, domain: str, constraints: Dict[str, str], fuzzy_ratio: int = 90):
         """
-        Returns the list of entities (dictionaries) for a given domain based on the annotation of the belief state.
+        Query the database based on the specified constraints for a given domain.
+
+        This function filters and returns the list of entities (dictionaries) that match the constraints for the specified domain.
+        It also handles the constraints with 'None' values or non-existing keys by ignoring them.
+        It also provides an optional parameter to specify a fuzzy matching ratio for the matching process.
 
         Arguments:
-            domain: Name of the queried domain.
-            constraints: Hard constraints to the query results.
-            fuzzy_ratio:
+            domain (str): Name of the queried domain. Valid options are 'taxi', 'hospital', and other specific domains.
+            constraints (Dict[str, str]): Hard constraints to the query results. The constraints should be a dictionary where
+                                           keys are the domain-specific properties and values are the expected values for these properties.
+            fuzzy_ratio (int, optional): A threshold to control the fuzziness of the match. It is useful when matching string properties.
+                                         The value should be between 0 (lowest match) and 100 (exact match). Defaults to 90.
+
+        Returns:
+            list[dict]: List of dictionaries where each dictionary represents an entity from the specified domain that matches the constraints.
         """
+
+        # Remove domain from the constraint keys if present and exclude keys mapped to "None"
+        clean_constraints = {}
+        for k, v in constraints.items():
+            if v != "None":  # Exclude keys mapped to "None"
+                clean_constraints[k.replace(domain + '-', '')] = v
+
+        constraints = clean_constraints
 
         if domain == 'taxi':
             taxi_color, taxi_type, taxi_phone = None, None, None
 
-            taxi_color = str(constraints.get('color', []))
-            taxi_color = taxi_color[0] if len(taxi_color) > 0 else random.choice(self.data[domain]['taxi_colors'])
-            taxi_type = str(constraints.get('type', []))
-            taxi_type = taxi_type[0] if len(taxi_type) > 0 else random.choice(self.data[domain]['taxi_types'])
-            taxi_phone = str(constraints.get('phone', []))
-            taxi_phone = taxi_phone[0] if len(taxi_phone) > 0 else ''.join([str(random.randint(1, 9)) for _ in range(11)])
+            # Fetch taxi color from constraints or choose a random color if not specified
+            taxi_color = constraints.get('color')
+            if taxi_color is None:
+                taxi_color = random.choice(self.data[domain]['taxi_colors'])
+
+            # Fetch a taxi type from constraints or choose a random type if not specified
+            taxi_type = constraints.get('type')
+            if taxi_type is None:
+                taxi_type = random.choice(self.data[domain]['taxi_types'])
+
+            # Fetch taxi phone from constraints or generate a random phone number if not specified
+            taxi_phone = constraints.get('phone')
+            if taxi_phone is None:
+                taxi_phone = ''.join([str(random.randint(1, 9)) for _ in range(11)])
 
             return [{'color': taxi_color, 'type': taxi_type, 'phone': taxi_phone}]
 
         elif domain == 'hospital':
 
-            hospital = {
+            # Define basic hospital details
+            default_hospital = {
                 'hospital phone': '01223245151',
                 'address': 'Hills Rd, Cambridge',
                 'postcode': 'CB20QQ',
                 'name': 'Addenbrookes'
             }
 
-            departments = [x.strip().lower() for x in constraints.get('department', [])]
-            phones = [x.strip().lower() for x in constraints.get('phone', [])]
-
-            if len(departments) == 0 and len(phones) == 0:
-                return [dict(hospital)]
+            # If 'department' constraint is present, ensure it is a list
+            constraint_department = constraints.get('department')
+            if constraint_department is not None:
+                department_list = [constraint_department] if isinstance(constraint_department,
+                                                                        str) else constraint_department
+                department_list = [department.strip().lower() for department in department_list]
             else:
-                results = []
-                for i in self.data[domain]:
-                    if 'department' in self.FUZZY_KEYS[domain]:
-                        f = (lambda x: fuzz.partial_ratio(i['department'].lower(), x) > fuzzy_ratio)
+                department_list = []
+
+            # If 'phone' constraint is present, ensure it is a list
+            constraint_phone = constraints.get('phone')
+            if constraint_phone is not None:
+                phone_list = [constraint_phone.strip().lower()]
+            else:
+                phone_list = []
+
+            # If no department or phone constraints are present, return the default hospital
+            if len(department_list) == 0 and len(phone_list) == 0:
+                return [dict(default_hospital)]
+            else:
+                query_results = []
+                for data_item in self.data[domain]:  # Iterate over all data items in the 'hospital' domain
+                    if 'department' in self.FUZZY_KEYS[domain]:  # Check if 'department' should be fuzzy matched
+                        match_func = (lambda x: fuzz.partial_ratio(data_item['department'].lower(), x) > fuzzy_ratio)
                     else:
-                        f = (lambda x: i['department'].lower() == x)
+                        match_func = (lambda x: data_item['department'].lower() == x)
 
-                    if any(f(x) for x in departments) and \
-                            (len(phones) == 0 or any(i['phone'] == p.strip() for p in phones)):
-                        results.append(dict(i))
-                        results[-1].update(hospital)
+                    # If any department matches and phone constraints are met, append the result
+                    if any(match_func(department) for department in department_list) and \
+                            (len(phone_list) == 0 or any(data_item['phone'] == phone for phone in phone_list)):
+                        result_item = dict(data_item)
+                        result_item.update(default_hospital)  # Add the default hospital details to the result
+                        query_results.append(result_item)
 
-                return results
+                return query_results
 
         elif domain in self.DOMAINS:
             # Hotel database keys:
@@ -212,82 +251,71 @@ class MultiWOZDatabase:
             #   arriveby, departure, day, leaveat, destination, trainid, price, duration
             #       The keys arriveby, leaveat expect a time format such as 8:45 for 8:45 am
 
-            results = []
-            query_ = {}
-
+            # If the 'entrancefee' constraint is present in 'attraction' domain, rename it to 'entrance fee'
             if domain == 'attraction' and 'entrancefee' in constraints:
                 constraints['entrance fee'] = constraints.pop('entrancefee')
 
+            # Initialize empty query dictionary
+            query_dict = {}
+
+            # For each key in the domain, if the key exists in the constraints and is not empty, add it to the query
+            # dictionary
             for key in self.data_keys[domain]:
-                query_[key] = constraints.get(key, [])
-                if len(query_[key]) > 0 and key in ['arriveby', 'leaveat']:
-                    if isinstance(query_[key][0], str):
-                        query_[key] = [query_[key]]
-                    query_[key] = [self.time_str_to_minutes(x) for x in query_[key]]
-                    query_[key] = list(set(query_[key]))
+                constraint_value = constraints.get(key)
+                if constraint_value is not None and constraint_value != 'None':
+                    if isinstance(constraint_value, str):
+                        constraint_value = [constraint_value]
+                    if key in ['arriveby', 'leaveat']:
+                        constraint_value = [self.time_str_to_minutes(time) for time in constraint_value]
+                        constraint_value = list(set(constraint_value))
+                    query_dict[key] = constraint_value
 
-            for i, database_item in enumerate(self.data[domain]):
-                for k, v in query_.items():
-                    if k not in database_item:
+            # Initialize result list
+            query_results = []
+
+            # Iterate over every item in the domain's data
+            for i, data_item in enumerate(self.data[domain]):
+                # Iterate over every key, value pair in the query
+                for key, values in query_dict.items():
+                    # If the key is not in the data item, or its value is '?' or empty, continue to the next iteration
+                    if key not in data_item or data_item[key] == '?' or values is None or len(values) == 0:
                         continue
-                    if len(v) == 0 or database_item[k] == '?':
-                        continue
 
-                    if k == 'arriveby':
-
-                        # accept database_item[k] if it is earlier than times in the query
-                        # if the database entry is not ok:
-                        #     break
-                        for taxi_type in v:
-                            if database_item[k] != ":":
-                                if database_item[k] < taxi_type:
-                                    break
-
-                    elif k == 'leaveat':
-
-                        # accept database_item[k] if it is later than times in the query
-                        # if the database entry is not ok:
-                        #     break
-                        for taxi_type in v:
-                            if database_item[k] != ":":
-                                if database_item[k] > v[0]:
-                                    break
-
-                    else:
-
-                        # accept database_item[k] if it matches to the values in query
-
-                        # Consider using fuzzy matching! See `partial_ratio` method in the fuzzywuzzy library.
-                        # Also, take a look into self.FUZZY_KEYS which stores slots suitable for being done in a fuzzy way.
-
-                        # if the database entry is not ok:
-                        #     break
-
-                        # Make sure we are processing a list of lowercase strings
-                        if isinstance(v, str):
-                            v = [v.strip().lower()]
-                        else:
-                            v = [x.strip().lower() for x in v]
-
-                        if k in self.FUZZY_KEYS[domain]:
-                            f = (lambda x: fuzz.partial_ratio(database_item[k].lower(), x) > fuzzy_ratio)
-                        else:
-                            f = (lambda x: database_item[k].lower() == x)
-                        if not any(f(x) for x in v):
+                    # For 'arriveby' key, the data item value should be earlier than the query times
+                    if key == 'arriveby':
+                        if not any(data_item[key] != ":" and data_item[key] < time for time in values):
                             break
 
-                else:  # This gets executed iff the above loop is not terminated
-                    result = copy.deepcopy(database_item)
+                    # For 'leaveat' key, the data item value should be later than the query times
+                    elif key == 'leaveat':
+                        if not any(data_item[key] != ":" and data_item[key] > time for time in values):
+                            break
+
+                    # For other keys, the data item value should match the query values
+                    else:
+                        # If fuzzy matching is to be used for the key, define a match function using fuzz.partial_ratio
+                        # Otherwise, define a match function for exact equality
+                        if key in self.FUZZY_KEYS[domain]:
+                            match_func = (lambda x: fuzz.partial_ratio(data_item[key].lower(), x) > fuzzy_ratio)
+                        else:
+                            match_func = (lambda x: data_item[key].lower() == x)
+
+                        # If none of the query values match the data item value, break the loop
+                        if not any(match_func(value.strip().lower()) for value in values):
+                            break
+
+                # If the loop finished without breaking, all constraints were satisfied
+                else:
+                    result = copy.deepcopy(data_item)
                     if domain in ['train', 'hotel', 'restaurant']:
-                        ref = constraints.get('ref', [])
-                        result['ref'] = '{0:08d}'.format(i) if len(ref) == 0 else ref
+                        ref = constraints.get('ref')
+                        if ref is not None and ref != 'None':
+                            result['ref'] = '{0:08d}'.format(i) if ref == "" else ref
+                    query_results.append(result)
 
-                    results.append(result)
-
+            # If the domain is 'attraction', rename 'entrance fee' back to 'entrancefee'
             if domain == 'attraction':
-                for result in results:
+                for result in query_results:
                     result['entrancefee'] = result.pop('entrance fee')
 
-            return results
-        else:
-            return []
+            return query_results
