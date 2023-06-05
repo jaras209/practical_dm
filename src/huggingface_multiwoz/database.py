@@ -3,7 +3,7 @@ import random
 import copy
 import os
 from pathlib import Path
-from typing import Text, Dict
+from typing import Text, Dict, Optional, Union, List
 from fuzzywuzzy import fuzz
 
 
@@ -143,7 +143,7 @@ class MultiWOZDatabase:
 
         return time
 
-    def query(self, domain: str, constraints: Dict[str, str], fuzzy_ratio: int = 90):
+    def query(self, domain: str, constraints: Dict[str, str], fuzzy_ratio: int = 90) -> Optional[List[Dict[str, str]]]:
         """
         Query the database based on the specified constraints for a given domain.
 
@@ -152,14 +152,15 @@ class MultiWOZDatabase:
         It also provides an optional parameter to specify a fuzzy matching ratio for the matching process.
 
         Arguments:
-            domain (str): Name of the queried domain. Valid options are 'taxi', 'hospital', and other specific domains.
+            domain (str): Domain of the data ('hotel', 'restaurant', 'attraction', 'train', or 'hospital')
             constraints (Dict[str, str]): Hard constraints to the query results. The constraints should be a dictionary where
                                            keys are the domain-specific properties and values are the expected values for these properties.
             fuzzy_ratio (int, optional): A threshold to control the fuzziness of the match. It is useful when matching string properties.
                                          The value should be between 0 (lowest match) and 100 (exact match). Defaults to 90.
 
         Returns:
-            list[dict]: List of dictionaries where each dictionary represents an entity from the specified domain that matches the constraints.
+            list[dict] or None: List of dictionaries with data entries that meet the constraints, None if the domain
+            was not queried at all.
         """
 
         # Remove domain from the constraint keys if present and exclude keys mapped to "None"
@@ -169,6 +170,11 @@ class MultiWOZDatabase:
                 clean_constraints[k.replace(domain + '-', '')] = v
 
         constraints = clean_constraints
+
+        # Check if all values in cleaned constraints are "None". If they are, return None immediately,
+        # indicating the domain was not queried at all.
+        if not clean_constraints:
+            return None
 
         if domain == 'taxi':
             taxi_color, taxi_type, taxi_phone = None, None, None

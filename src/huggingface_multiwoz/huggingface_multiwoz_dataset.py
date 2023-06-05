@@ -1,5 +1,6 @@
 import logging
 import pickle
+import random
 from pathlib import Path
 import datasets
 import numpy as np
@@ -59,7 +60,7 @@ def extract_act_type_slot_name_pairs(dialogue_acts,
 
 
 def get_database_results(database: MultiWOZDatabase,
-                         belief_state: Dict[str, Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+                         belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Optional[List[Dict[str, str]]]]:
     """
     Get the database results for the current domain and belief state.
 
@@ -68,7 +69,10 @@ def get_database_results(database: MultiWOZDatabase,
         belief_state (Dict[str, Dict[str, str]]): The current belief state.
 
     Returns:
-        Dict[str, List[Dict[str, Any]]]: A dictionary with domain as the key and a list of resulting entities as the value.
+        Dict[str, Optional[List[Dict[str, str]]]]:
+            A dictionary with domain as the key and an optional list of resulting database items as the value.
+            The list can be empty indicating that no database item matched the given domain state, and the
+            value None if the domain was not queried at all.
     """
     database_results = {}
 
@@ -168,7 +172,7 @@ def load_data(file_path: Path) -> List[Dict[str, Any]]:
         raise FileNotFoundError(f"Data file not found at {file_path.with_suffix('.json')}")
 
 
-def save_data(data: list[[dict]], file_path: Path, force: bool = False):
+def save_data(data: list[[Dict]], file_path: Path, force: bool = False):
     """
         Save data to disk as both JSON and CSV files.
 
@@ -237,14 +241,18 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
             belief_state = update_belief_state(belief_state, frame)
 
             # Create a state update by comparing the old and new belief states
-            state_update = create_state_update(belief_state, example['old_belief_state'])
+            # state_update = create_state_update(belief_state, example['old_belief_state'])
 
             # Get the database results for the updated belief state
             database_results = get_database_results(database, belief_state)
 
+            database_results_count = {domain: len(elements) for domain, elements in database_results.items()
+                                      if elements is not None}
+            print(database_results_count)
+
             example.update({
                 'new_belief_state': copy.deepcopy(belief_state),
-                'state_update': state_update,
+                # 'state_update': state_update,
                 'database_results': database_results
             })
 
@@ -354,8 +362,13 @@ def load_multiwoz_dataset(split: str,
             else:
                 dialogue_domain = ''
 
+            print("=====================")
             data.extend(parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain, database=database,
                                                      context_len=context_len, strip_domain=strip_domain))
+
+            # TODO: SMAZAT!!!!!!!!!!
+            if len(data) > 100:
+                break
 
         save_data(data, file_path)
 
@@ -365,7 +378,7 @@ def load_multiwoz_dataset(split: str,
     return df
 
 
-def belief_state_to_str(belief_state: dict[str, dict[str, str]]) -> str:
+def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
     result = '{'
     for domain, slot_values in belief_state.items():
         slot_values_str = ','.join(f" {slot} : {value} " for slot, value in slot_values.items() if value != "None")
@@ -374,6 +387,32 @@ def belief_state_to_str(belief_state: dict[str, dict[str, str]]) -> str:
 
     result += ' }'
     return result
+
+
+def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]], threshold: int = 5) -> str:
+    result = '{'
+    for domain, result_list in database_results.items():
+        if result_list is None:
+            continue
+        elif not result_list:
+            result_list_str = "[]"
+        else:
+            if len(result_list) > threshold:
+                result_list = random.sample(result_list, threshold)
+
+            result_list_str = '[' + ','.join('{' + ','.join(f" {slot} : {value} " for slot, value in dict_element.items()) + '}'
+                                             for dict_element in result_list) + ']'
+
+        result += f" {domain} : {result_list_str}"
+
+    result += ' }'
+    return result
+
+
+def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]]) -> str:
+    result = ', '.join(f"{domain} : {len(result_list)}" for domain, result_list in database_results.items()
+                       if result_list is not None)
+    return '{' + result + '}'
 
 
 class MultiWOZDataset:
@@ -493,8 +532,14 @@ class MultiWOZDataset:
          dictionary includes tokenized features ('input_ids', 'token_type_ids', 'attention_mask') and labels in binary
          array format.
         """
+        utterances = example_batch['utterance']
+
         # Convert the belief states in the example batch into string format.
         belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
+
+        # Convert the database_results in the example batch into string format and als string with counts
+        database_results = list(map(database_results_to_str, example_batch['database_results']))
+        database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
 
         # Convert the contexts in the example batch into string format, with elements joined by the separator token.
         contexts = list(map(lambda x: self.tokenizer.sep_token.join(x), example_batch['context']))
@@ -503,6 +548,15 @@ class MultiWOZDataset:
         texts = list(map(lambda belief, context, user_utter:
                          BELIEF + ' ' + belief + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
                          belief_states, contexts, example_batch['utterance']))
+
+        # Combine the belief states, database_results, database_results_count, contexts, and user utterances into
+        # a single string for each example in the batch.
+        texts = list(map(lambda belief, db_results, db_results_count, context, user_utter:
+                         BELIEF + ' ' + belief + ' ' + DATABASE + ' ' + db_results + ' ' + DATABASE_COUNTS + ' ' +
+                         db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
+                         belief_states, database_results, database_results_count, contexts, utterances))
+
+
 
         # Use the tokenizer to convert these strings into a format suitable for model input
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
@@ -543,9 +597,8 @@ class MultiWOZDataset:
 
         return action_ids.tolist()
 
-    def get_id2label(self) -> dict[int, str]:
+    def get_id2label(self) -> Dict[int, str]:
         return {i: label for i, label in enumerate(self.label_encoder.classes_)}
 
-    def get_label2id(self) -> dict[str, int]:
+    def get_label2id(self) -> Dict[str, int]:
         return {label: i for i, label in enumerate(self.label_encoder.classes_)}
-

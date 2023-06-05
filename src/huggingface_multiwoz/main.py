@@ -24,6 +24,9 @@ def main(args):
                                        data_path=args.data_path,
                                        domains=args.domains)
 
+    for i, element in enumerate(multiwoz_dataset.dataset['train']):
+        print(f"{i}: {element['database_results']}")
+
     if args.train_model:
         # Train the model
         logging.info("Training the model...")

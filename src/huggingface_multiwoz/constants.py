@@ -2,6 +2,8 @@ UNK_ACTION = 'UNK'
 BELIEF = '<|BELIEF|>'
 CONTEXT = '<|CONTEXT|>'
 USER = '<|USER|>'
+DATABASE = '<|DATABASE|>'
+DATABASE_COUNTS = '<|DATABASE_COUNTS|>'
 SPECIAL_TOKENS = [BELIEF, CONTEXT, USER]
 DOMAIN_NAMES = {'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'}
 # TODO: probably need to verify that these are all the slots
