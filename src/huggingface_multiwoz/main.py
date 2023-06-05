@@ -2,10 +2,10 @@ import argparse
 import logging
 from pathlib import Path
 
-from huggingface_multiwoz.constants import SPECIAL_TOKENS
-from huggingface_multiwoz.evaluating import evaluate
-from huggingface_multiwoz.huggingface_multiwoz_dataset import MultiWOZDataset, belief_state_to_str
-from huggingface_multiwoz.training import train
+from constants import SPECIAL_TOKENS
+from evaluating import evaluate
+from huggingface_multiwoz_dataset import MultiWOZDataset, belief_state_to_str
+from training import train
 
 
 def main(args):

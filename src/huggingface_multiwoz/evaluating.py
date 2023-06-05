@@ -12,8 +12,8 @@ from sklearn.metrics import recall_score, precision_score, f1_score, accuracy_sc
 from transformers import AutoModelForSequenceClassification, pipelines, Pipeline
 from transformers.pipelines.base import KeyDataset
 
-from huggingface_multiwoz.database import MultiWOZDatabase
-from huggingface_multiwoz.huggingface_multiwoz_dataset import MultiWOZDataset
+from database import MultiWOZDatabase
+from huggingface_multiwoz_dataset import MultiWOZDataset
 
 
 def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Dataset, database: MultiWOZDatabase):
