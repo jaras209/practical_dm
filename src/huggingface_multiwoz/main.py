@@ -56,8 +56,8 @@ if __name__ == "__main__":
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        # default="/home/safar/HCN/models/hf_multiwoz_train",
-                        default="../../models/",
+                        default="/home/safar/HCN/models/hf_multiwoz_restaurant",
+                        # default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
@@ -67,18 +67,18 @@ if __name__ == "__main__":
                         help="Path to the pretrained Hugging face tokenizer.")
     parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
-    parser.add_argument("--epochs", default=2, type=int, help="Number of epochs.")
+    parser.add_argument("--epochs", default=50, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
     parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
                                                                                 "training is ended if there is no "
                                                                                 "improvement on validation data")
 
     parser.add_argument("--data_path",
-                        # default="/home/safar/HCN/data/huggingface_data",
-                        default="../../data/huggingface_data",
+                        default="/home/safar/HCN/data/huggingface_data",
+                        # default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
-    parser.add_argument("--domains", default=[], nargs='*')
+    parser.add_argument("--domains", default=['restaurant'], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
     parser.set_defaults(train_model=True)
