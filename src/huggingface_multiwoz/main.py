@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
     parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
-    parser.add_argument("--max_seq_length", default=None, type=int, help="Max seq length of input to transformer")
+    parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
     parser.add_argument("--epochs", default=2, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
     parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "

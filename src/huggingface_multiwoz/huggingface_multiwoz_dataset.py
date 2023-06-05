@@ -362,7 +362,6 @@ def load_multiwoz_dataset(split: str,
             else:
                 dialogue_domain = ''
 
-            print("=====================")
             data.extend(parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain, database=database,
                                                      context_len=context_len, strip_domain=strip_domain))
 
@@ -400,8 +399,9 @@ def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, 
             if len(result_list) > threshold:
                 result_list = random.sample(result_list, threshold)
 
-            result_list_str = '[' + ','.join('{' + ','.join(f" {slot} : {value} " for slot, value in dict_element.items()) + '}'
-                                             for dict_element in result_list) + ']'
+            result_list_str = '[' + ','.join(
+                '{' + ','.join(f" {slot} : {value} " for slot, value in dict_element.items()) + '}'
+                for dict_element in result_list) + ']'
 
         result += f" {domain} : {result_list_str}"
 
@@ -544,11 +544,6 @@ class MultiWOZDataset:
         # Convert the contexts in the example batch into string format, with elements joined by the separator token.
         contexts = list(map(lambda x: self.tokenizer.sep_token.join(x), example_batch['context']))
 
-        # Combine the belief states, contexts, and user utterances into a single string for each example in the batch.
-        texts = list(map(lambda belief, context, user_utter:
-                         BELIEF + ' ' + belief + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
-                         belief_states, contexts, example_batch['utterance']))
-
         # Combine the belief states, database_results, database_results_count, contexts, and user utterances into
         # a single string for each example in the batch.
         texts = list(map(lambda belief, db_results, db_results_count, context, user_utter:
@@ -556,13 +551,16 @@ class MultiWOZDataset:
                          db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
                          belief_states, database_results, database_results_count, contexts, utterances))
 
-
-
         # Use the tokenizer to convert these strings into a format suitable for model input
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
 
+        # Check if any text was truncated
+        if (long_texts := sum([len(text.split()) > self.max_seq_length for text in texts])) > 0:
+            print(f'Warning: {long_texts} texts have been truncated to fit the maximum token length limit.')
+
         # Cast action labels to binary arrays.
-        # Create a binary array where each row corresponds to an example, and each column corresponds to a unique action.
+        # Create a binary array where each row corresponds to an example,
+        # and each column corresponds to a unique action.
         labels = np.zeros((len(example_batch['actions']), self.num_labels))
         for idx, action_list in enumerate(example_batch['actions']):
             # Convert the action labels into their corresponding indices.
