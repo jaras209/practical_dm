@@ -4,7 +4,7 @@ from pathlib import Path
 
 from huggingface_multiwoz.constants import SPECIAL_TOKENS
 from huggingface_multiwoz.evaluating import evaluate
-from huggingface_multiwoz.huggingface_multiwoz_dataset import MultiWOZDataset
+from huggingface_multiwoz.huggingface_multiwoz_dataset import MultiWOZDataset, belief_state_to_str
 from huggingface_multiwoz.training import train
 
 
@@ -23,9 +23,6 @@ def main(args):
                                        additional_special_tokens=SPECIAL_TOKENS,
                                        data_path=args.data_path,
                                        domains=args.domains)
-
-    for i, element in enumerate(multiwoz_dataset.dataset['train']):
-        print(f"{i}: {element['database_results']}")
 
     if args.train_model:
         # Train the model

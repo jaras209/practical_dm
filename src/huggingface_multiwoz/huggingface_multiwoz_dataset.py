@@ -535,7 +535,7 @@ class MultiWOZDataset:
         utterances = example_batch['utterance']
 
         # Convert the belief states in the example batch into string format.
-        belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
+        belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
         # Convert the database_results in the example batch into string format and als string with counts
         database_results = list(map(database_results_to_str, example_batch['database_results']))
