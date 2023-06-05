@@ -248,7 +248,6 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
 
             database_results_count = {domain: len(elements) for domain, elements in database_results.items()
                                       if elements is not None}
-            print(database_results_count)
 
             example.update({
                 'new_belief_state': copy.deepcopy(belief_state),
@@ -364,10 +363,6 @@ def load_multiwoz_dataset(split: str,
 
             data.extend(parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain, database=database,
                                                      context_len=context_len, strip_domain=strip_domain))
-
-            # TODO: SMAZAT!!!!!!!!!!
-            if len(data) > 100:
-                break
 
         save_data(data, file_path)
 
