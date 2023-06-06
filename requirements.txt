@@ -1,6 +1,7 @@
 torch
 transformers
 datasets
+evaluate
 pandas
 numpy
 scikit-learn

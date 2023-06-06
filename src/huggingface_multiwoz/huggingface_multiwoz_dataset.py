@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import copy
 from typing import Optional, List, Any, Tuple, Union, Dict
-from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
@@ -16,16 +15,6 @@ from transformers import AutoTokenizer
 from constants import *
 
 logging.basicConfig(level=logging.INFO)
-
-
-# TODO: rewrite this using evaluate huggingface function
-def _compute_metrics(eval_pred):
-    logits, y_true = eval_pred
-    y_pred = (logits >= 0).astype(np.float32)
-    return {"accuracy": accuracy_score(y_true=y_true, y_pred=y_pred),
-            "recall": recall_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "precision": precision_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
 
 
 def extract_act_type_slot_name_pairs(dialogue_acts,

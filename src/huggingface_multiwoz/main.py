@@ -34,7 +34,12 @@ def main(args):
                                    learning_rate=args.learning_rate,
                                    epochs=args.epochs,
                                    early_stopping_patience=args.early_stopping_patience,
-                                   local_model=args.local_model)
+                                   local_model=args.local_model,
+                                   strategy=args.strategy,
+                                   logging_steps=args.logging_steps,
+                                   save_steps=args.save_steps,
+                                   warmup_steps=args.warmup_steps,
+                                   metric_for_best_model=args.metric_for_best_model)
         logging.info("Model training complete.")
     else:
         # Use the provided path for evaluation
@@ -72,7 +77,22 @@ if __name__ == "__main__":
     parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
                                                                                 "training is ended if there is no "
                                                                                 "improvement on validation data")
-
+    parser.add_argument("--warmup_steps", type=int, default=100, help="Number of steps for the warmup phase. During "
+                                                                        "this phase, the learning rate gradually "
+                                                                        "increases to the initial learning rate.")
+    parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps after which the training "
+                                                                        "progress will be logged.")
+    parser.add_argument("--save_steps", type=int, default=100,
+                        help="Number of steps after which the current state of the model will be saved.")
+    parser.add_argument("--strategy", type=str, default='epoch',
+                        help="Strategy for model evaluation/logging and saving during training. "
+                             "Could be either 'steps' or 'epoch'.",
+                        choices=['steps', 'epoch'])
+    parser.add_argument("--metric_for_best_model", type=str, default='f1_macro', help="Metric to monitor for early "
+                                                                                      "stopping and saving the best "
+                                                                                      "model.",
+                        choices=['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'precision_weighted',
+                                 'recall_macro', 'recall_weighted'])
     parser.add_argument("--data_path",
                         default="/home/safar/HCN/data/huggingface_data",
                         # default="../../data/huggingface_data",
