@@ -72,9 +72,9 @@ if __name__ == "__main__":
                         help="Path to the pretrained Hugging face tokenizer.")
     parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
-    parser.add_argument("--epochs", default=50, type=int, help="Number of epochs.")
+    parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
-    parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
+    parser.add_argument("--early_stopping_patience", default=5, type=int, help="Number of epochs after which the "
                                                                                 "training is ended if there is no "
                                                                                 "improvement on validation data")
     parser.add_argument("--warmup_steps", type=int, default=100, help="Number of steps for the warmup phase. During "
@@ -84,7 +84,7 @@ if __name__ == "__main__":
                                                                         "progress will be logged.")
     parser.add_argument("--save_steps", type=int, default=100,
                         help="Number of steps after which the current state of the model will be saved.")
-    parser.add_argument("--strategy", type=str, default='epoch',
+    parser.add_argument("--strategy", type=str, default='steps',
                         help="Strategy for model evaluation/logging and saving during training. "
                              "Could be either 'steps' or 'epoch'.",
                         choices=['steps', 'epoch'])
