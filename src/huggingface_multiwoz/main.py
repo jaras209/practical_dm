@@ -84,7 +84,7 @@ if __name__ == "__main__":
                                                                         "progress will be logged.")
     parser.add_argument("--save_steps", type=int, default=100,
                         help="Number of steps after which the current state of the model will be saved.")
-    parser.add_argument("--strategy", type=str, default='steps',
+    parser.add_argument("--strategy", type=str, default='epoch',
                         help="Strategy for model evaluation/logging and saving during training. "
                              "Could be either 'steps' or 'epoch'.",
                         choices=['steps', 'epoch'])

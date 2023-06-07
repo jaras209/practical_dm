@@ -15,6 +15,9 @@ from transformers.pipelines.base import KeyDataset
 from database import MultiWOZDatabase
 from huggingface_multiwoz_dataset import MultiWOZDataset
 
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+logging.basicConfig(level=logging.INFO)
+
 
 def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Dataset, database: MultiWOZDatabase):
     """
@@ -243,12 +246,12 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5
 
         # Compare labels
         compare_start_time = time.time()
-        predicted_labels, y_pred, y_true = compare_labels(predictions, dataset_data, label2id=multiwoz_dataset.label2id)
+        predicted_labels, y_pred, y_true = compare_labels(predictions, dataset_data, label2id=multiwoz_dataset.get_label2id())
         logging.info(f"Comparing predictions with true labels took {time.time() - compare_start_time:.2f} seconds.")
 
         # Calculate metrics
         metrics_start_time = time.time()
-        metrics = calculate_metrics(y_true, y_pred, id2label=multiwoz_dataset.id2label)
+        metrics = calculate_metrics(y_true, y_pred, id2label=multiwoz_dataset.get_id2label())
         logging.info(f"Computing metrics for {dataset_name} took {time.time() - metrics_start_time:.2f} seconds.")
 
         # Create output_df containing prediction results
