@@ -54,9 +54,6 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
                 slot = None
 
             # Query the domain to get the full dialogue act.
-            # TODO: má to být belief_state[domain]? Nebo celý
-            #  belief_state? Podle struktury toho argumentu spíš to první. Promyslet!! Možná využívat tu
-            #  `get_database_results` funkci
             query_result = database.query(domain, belief_state[domain])
 
             # Use the extracted domain, action, and slot to process the query_result and extend the label.
@@ -151,23 +148,23 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, id2label: Dict[int
         Dict[str, Dict[str, float]]: Dictionary containing evaluation metrics and their respective values.
     """
     # Calculate recall scores
-    actions_recall = recall_score(y_true=y_true, y_pred=y_pred, average=None)
-    macro_recall = recall_score(y_true=y_true, y_pred=y_pred, average='macro')
-    weighted_recall = recall_score(y_true=y_true, y_pred=y_pred, average='weighted')
+    actions_recall = recall_score(y_true=y_true, y_pred=y_pred, average=None, zero_division=0)
+    macro_recall = recall_score(y_true=y_true, y_pred=y_pred, average='macro', zero_division=0)
+    weighted_recall = recall_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0)
     recall = {'metric': 'recall', 'macro': round(macro_recall, 4), 'weighted': round(weighted_recall, 4)}
     recall.update({action: round(actions_recall[i], 4) for i, action in id2label.items()})
 
     # Calculate precision scores
-    actions_precision = precision_score(y_true=y_true, y_pred=y_pred, average=None)
-    macro_precision = precision_score(y_true=y_true, y_pred=y_pred, average='macro')
-    weighted_precision = precision_score(y_true=y_true, y_pred=y_pred, average='weighted')
+    actions_precision = precision_score(y_true=y_true, y_pred=y_pred, average=None, zero_division=0)
+    macro_precision = precision_score(y_true=y_true, y_pred=y_pred, average='macro', zero_division=0)
+    weighted_precision = precision_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0)
     precision = {'metric': 'precision', 'macro': round(macro_precision, 4), 'weighted': round(weighted_precision, 4)}
     precision.update({action: round(actions_precision[i], 4) for i, action in id2label.items()})
 
     # Calculate F1 scores
-    actions_f1 = f1_score(y_true=y_true, y_pred=y_pred, average=None)
-    macro_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='macro')
-    weighted_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
+    actions_f1 = f1_score(y_true=y_true, y_pred=y_pred, average=None, zero_division=0)
+    macro_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='macro', zero_division=0)
+    weighted_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0)
     f1 = {'metric': 'f1', 'macro': round(macro_f1, 4), 'weighted': round(weighted_f1, 4)}
     f1.update({action: round(actions_f1[i], 4) for i, action in id2label.items()})
 
@@ -201,13 +198,15 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5, only_dataset: str = None):
+def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, database: MultiWOZDatabase, top_k: int = 5,
+             only_dataset: str = None):
     """
     Evaluate the model on the datasets in multiwoz_dataset.
 
     Args:
         multiwoz_dataset (MultiWOZDataset): The dataset object containing the dataset and tokenizer.
         model_path (Path): The path to the trained model.
+        database (MultiWOZDatabase): The database object with the query method.
         top_k (int, optional): The top k actions to consider in the model pipeline. Defaults to 5.
         only_dataset (str, optional): If set, only evaluate the model on the specified dataset. Defaults to None.
     """
@@ -249,6 +248,11 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5
         predicted_labels, y_pred, y_true = compare_labels(predictions, dataset_data, label2id=multiwoz_dataset.get_label2id())
         logging.info(f"Comparing predictions with true labels took {time.time() - compare_start_time:.2f} seconds.")
 
+        # Create dialogue acts from the predicted labels.
+        dialogue_acts_start_time = time.time()
+        dialogue_acts = create_dialogue_acts(predicted_labels, dataset_data, database)
+        logging.info(f"Creating dialogue acts took {time.time() - dialogue_acts_start_time:.2f} seconds.")
+
         # Calculate metrics
         metrics_start_time = time.time()
         metrics = calculate_metrics(y_true, y_pred, id2label=multiwoz_dataset.get_id2label())
@@ -257,6 +261,7 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5
         # Create output_df containing prediction results
         output_df = dataset_data.to_pandas()
         output_df['predicted'] = predicted_labels
+        output_df['dialogue_acts'] = dialogue_acts
         output_df['scores'] = predictions
 
         # Save results

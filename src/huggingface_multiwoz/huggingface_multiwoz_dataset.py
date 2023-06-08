@@ -271,6 +271,7 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
 
 
 def load_multiwoz_dataset(split: str,
+                          database: MultiWOZDatabase,
                           domains: List[str] = None,
                           context_len: int = None,
                           only_single_domain: bool = False,
@@ -282,6 +283,7 @@ def load_multiwoz_dataset(split: str,
 
     Args:
         split (str): Which subset of the dataset to load (train, test, or validation).
+        database (MultiWOZDatabase): The database with the query method.
         domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
         context_len (int, optional): The maximum length of the conversation history to keep for each example.
         only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
@@ -306,9 +308,8 @@ def load_multiwoz_dataset(split: str,
     # Sort domains to always get the same order of in the paths and file names below
     domains.sort()
 
-    # Create cache directory path and database directory path from data path
+    # Create cache directory path from data path
     cache_path = Path(data_path) / "cache"
-    database_path = Path(data_path) / "database"
     cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
 
     # Create cache directory, if it doesn't exist
@@ -331,9 +332,6 @@ def load_multiwoz_dataset(split: str,
         logging.info(f"Preprocessing {split} data and saving it to {file_path}.")
         multi_woz_dataset = datasets.load_dataset(path='multi_woz_v22', split=split, verification_mode='no_checks',
                                                   streaming=True)
-
-        # Load MultiWoz Database, which is locally saved at database_path
-        database = MultiWOZDatabase(database_path)
 
         data = []
         # Iterate through dialogues in the dataset, preprocessing each dialogue
@@ -443,16 +441,20 @@ class MultiWOZDataset:
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True,
                                                        additional_special_tokens=additional_special_tokens)
 
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(data_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
 
         # Load train/val/test datasets into DataFrames
-        train_df = load_multiwoz_dataset('train', context_len=self.context_len, data_path=data_path,
-                                         domains=domains, only_single_domain=self.only_single_domain)
-        val_df = load_multiwoz_dataset('validation', context_len=self.context_len, data_path=data_path,
-                                       domains=domains, only_single_domain=self.only_single_domain)
-        test_df = load_multiwoz_dataset('test', context_len=self.context_len, data_path=data_path,
-                                        domains=domains, only_single_domain=self.only_single_domain)
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
 
         # Gather unique labels which are used in 'label' <-> 'integers' map
         unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
@@ -522,7 +524,7 @@ class MultiWOZDataset:
         belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
         # Convert the database_results in the example batch into string format and als string with counts
-        database_results = list(map(database_results_to_str, example_batch['database_results']))
+        # database_results = list(map(database_results_to_str, example_batch['database_results']))
         database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
 
         # Convert the contexts in the example batch into string format, with elements joined by the separator token.
@@ -530,10 +532,10 @@ class MultiWOZDataset:
 
         # Combine the belief states, database_results, database_results_count, contexts, and user utterances into
         # a single string for each example in the batch.
-        texts = list(map(lambda belief, db_results, db_results_count, context, user_utter:
-                         BELIEF + ' ' + belief + ' ' + DATABASE + ' ' + db_results + ' ' + DATABASE_COUNTS + ' ' +
+        texts = list(map(lambda belief, db_results_count, context, user_utter:
+                         BELIEF + ' ' + belief + ' ' + DATABASE_COUNTS + ' ' +
                          db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
-                         belief_states, database_results, database_results_count, contexts, utterances))
+                         belief_states, database_results_count, contexts, utterances))
 
         # Use the tokenizer to convert these strings into a format suitable for model input
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
