@@ -53,6 +53,8 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
                 domain, action = parts[-1], None
                 slot = None
 
+            domain = domain.lower()
+
             # Query the domain to get the full dialogue act.
             query_result = database.query(domain, belief_state[domain])
 
