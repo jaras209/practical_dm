@@ -198,7 +198,7 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, database: MultiWOZDatabase, top_k: int = 5,
+def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5,
              only_dataset: str = None):
     """
     Evaluate the model on the datasets in multiwoz_dataset.
@@ -206,7 +206,6 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, database: Mult
     Args:
         multiwoz_dataset (MultiWOZDataset): The dataset object containing the dataset and tokenizer.
         model_path (Path): The path to the trained model.
-        database (MultiWOZDatabase): The database object with the query method.
         top_k (int, optional): The top k actions to consider in the model pipeline. Defaults to 5.
         only_dataset (str, optional): If set, only evaluate the model on the specified dataset. Defaults to None.
     """
@@ -250,7 +249,7 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, database: Mult
 
         # Create dialogue acts from the predicted labels.
         dialogue_acts_start_time = time.time()
-        dialogue_acts = create_dialogue_acts(predicted_labels, dataset_data, database)
+        dialogue_acts = create_dialogue_acts(predicted_labels, dataset_data, multiwoz_dataset.database)
         logging.info(f"Creating dialogue acts took {time.time() - dialogue_acts_start_time:.2f} seconds.")
 
         # Calculate metrics
