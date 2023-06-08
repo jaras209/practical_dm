@@ -14,6 +14,7 @@ from transformers.pipelines.base import KeyDataset
 
 from database import MultiWOZDatabase
 from huggingface_multiwoz_dataset import MultiWOZDataset
+from constants import DOMAIN_NAMES
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
@@ -54,19 +55,26 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
                 slot = None
 
             domain = domain.lower()
+            if domain in DOMAIN_NAMES:
+                # Query the domain to get the full dialogue act.
+                query_result = database.query(domain, belief_state[domain])
 
-            # Query the domain to get the full dialogue act.
-            query_result = database.query(domain, belief_state[domain])
-
-            # Use the extracted domain, action, and slot to process the query_result and extend the label.
-            if slot is not None:
-                dialogue_act = f"{domain}-{action}({slot})"
-                for result in query_result:
-                    if slot in result:
-                        dialogue_act = f"{domain}-{action}({slot}={result[slot]})"
-                        break
+                # Use the extracted domain, action, and slot to process the query_result and extend the label.
+                if slot is not None:
+                    dialogue_act = f"{domain}-{action}({slot})"
+                    for result in query_result:
+                        if slot in result:
+                            dialogue_act = f"{domain}-{action}({slot}={result[slot]})"
+                            break
+                else:
+                    dialogue_act = f"{domain}-{action}"
             else:
-                dialogue_act = f"{domain}-{action}"
+                # If slot is not None, create a dialogue_act with the slot.
+                # Otherwise, create a dialogue_act without the slot.
+                if slot is not None:
+                    dialogue_act = f"{domain}-{action}({slot})"
+                else:
+                    dialogue_act = f"{domain}-{action}"
 
             dialogue_acts.append(dialogue_act)
 
