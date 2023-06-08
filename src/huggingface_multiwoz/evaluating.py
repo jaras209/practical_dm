@@ -55,26 +55,21 @@ def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Da
                 slot = None
 
             domain = domain.lower()
+
+            # Prepare base dialogue act
+            dialogue_act_base = f"{domain}-{action}"
+            dialogue_act = f"{dialogue_act_base}({slot})" if slot is not None else dialogue_act_base
+
             if domain in DOMAIN_NAMES:
                 # Query the domain to get the full dialogue act.
                 query_result = database.query(domain, belief_state[domain])
 
-                # Use the extracted domain, action, and slot to process the query_result and extend the label.
-                if slot is not None:
-                    dialogue_act = f"{domain}-{action}({slot})"
+                # If query result is not None and slot exists, modify the dialogue act with result from query.
+                if query_result is not None and slot is not None:
                     for result in query_result:
                         if slot in result:
-                            dialogue_act = f"{domain}-{action}({slot}={result[slot]})"
+                            dialogue_act = f"{dialogue_act_base}({slot}={result[slot]})"
                             break
-                else:
-                    dialogue_act = f"{domain}-{action}"
-            else:
-                # If slot is not None, create a dialogue_act with the slot.
-                # Otherwise, create a dialogue_act without the slot.
-                if slot is not None:
-                    dialogue_act = f"{domain}-{action}({slot})"
-                else:
-                    dialogue_act = f"{domain}-{action}"
 
             dialogue_acts.append(dialogue_act)
 
