@@ -14,7 +14,7 @@ from transformers.pipelines.base import KeyDataset
 
 from database import MultiWOZDatabase
 from huggingface_multiwoz_dataset import MultiWOZDataset
-from constants import DOMAIN_NAMES
+from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
@@ -191,7 +191,7 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
         metrics (Dict[str, Dict[str, float]]): The dictionary containing the evaluation metrics.
     """
     # Save predictions to file.
-    output_df = output_df[['text', 'actions', 'predicted', 'system_utterance', 'scores']]
+    output_df = output_df[OUTPUT_DF_COLUMNS]
     model_path.mkdir(exist_ok=True, parents=True)
     output_df.to_csv(model_path / f'{dataset_name}_predictions.csv')
     logging.info(f"Predictions saved to {model_path / f'{dataset_name}_predictions.csv'}.")
@@ -269,9 +269,7 @@ def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5
         output_df['scores'] = predictions
 
         # Save results
-        save_start_time = time.time()
         save_results(model_path, dataset_name, output_df, metrics)
-        logging.info(f"Saving results took {time.time() - save_start_time:.2f} seconds.")
 
         logging.info(f"Evaluating model on {dataset_name} done in {time.time() - dataset_start_time:.2f} seconds.\n")
         logging.info("=======================================================")

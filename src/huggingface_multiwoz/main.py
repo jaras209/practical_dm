@@ -55,13 +55,13 @@ if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--pretrained_model",
-                        # default='/home/safar/HCN/models/hf_multiwoz_hotel/roberta-base/roberta-base_230315',
-                        default='roberta-base',
-                        # default='../models/hf_hotel_roberta-base_230316-151206',
+                        default='roberta-base-finetuned-2023-06-08-17-45-19',
+                        # default='roberta-base',
+                        # default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        default="/home/safar/HCN/models/hf_multiwoz_restaurant",
+                        # default="/home/safar/HCN/models/hf_multiwoz_restaurant",
                         # default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument("--domains", default=['restaurant'], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
-    parser.set_defaults(train_model=True)
+    parser.set_defaults(train_model=False)
     args = parser.parse_args()
 
     # Run the main function with the parsed arguments
