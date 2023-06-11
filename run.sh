@@ -6,6 +6,7 @@
 #SBATCH --gres=gpu:2                 # Number of GPUs per node
 #SBATCH --partition=gpu              # GPU partition
 #SBATCH --mem=32GB                   # Memory per node
+#SBATCH --nodelist=gpu-node2         # Desired GPU node
 
 # Load required modules and activate Conda environment
 module load cuda/11.0

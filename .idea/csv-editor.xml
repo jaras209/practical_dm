@@ -115,6 +115,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/models/hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements/test_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements/test_predictions.csv">
           <value>
             <Attribute>
@@ -123,6 +130,13 @@
           </value>
         </entry>
         <entry key="/models/hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements/train_predictions.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/models/hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements/val_metrics.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

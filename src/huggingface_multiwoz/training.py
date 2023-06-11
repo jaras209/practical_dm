@@ -13,7 +13,7 @@ from transformers import (
 import torch
 
 from metrics import MetricsCallback, compute_metrics
-from huggingface_multiwoz_dataset import MultiWOZDataset
+from huggingface_multiwoz_dataset import MultiWOZDatasetActions
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,7 @@ def highest_checkpoint(file_path: Path) -> Tuple[int, Path]:
     return checkpoint_number, file_path
 
 
-def train(multiwoz_dataset: MultiWOZDataset,
+def train(multiwoz_dataset: MultiWOZDatasetActions,
           model_root_path: str,
           pretrained_model: str,
           batch_size: int,
@@ -58,7 +58,7 @@ def train(multiwoz_dataset: MultiWOZDataset,
     Train the model using the given arguments and dataset.
 
     Args:
-        multiwoz_dataset (MultiWOZDataset): The dataset object containing the dataset and tokenizer.
+        multiwoz_dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
         model_root_path (str): The root directory for saving the model.
         pretrained_model (str): The name of the pre-trained model or HuggingFace model.
         batch_size (int): Batch size for training and evaluation.

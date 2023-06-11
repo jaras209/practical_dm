@@ -234,10 +234,6 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
 
             # Get the database results for the updated belief state
             database_results = get_database_results(database, belief_state)
-
-            database_results_count = {domain: len(elements) for domain, elements in database_results.items()
-                                      if elements is not None}
-
             example.update({
                 'new_belief_state': copy.deepcopy(belief_state),
                 # 'state_update': state_update,
@@ -397,7 +393,7 @@ def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict
     return '{' + result + '}'
 
 
-class MultiWOZDataset:
+class MultiWOZDatasetActions:
     def __init__(self,
                  tokenizer_name: str,
                  label_column: str,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from constants import SPECIAL_TOKENS
 from evaluating import evaluate
-from huggingface_multiwoz_dataset import MultiWOZDataset, belief_state_to_str
+from huggingface_multiwoz_dataset import MultiWOZDatasetActions, belief_state_to_str
 from training import train
 
 
@@ -16,13 +16,13 @@ def main(args):
         args: A Namespace object containing the parsed command-line arguments.
     """
     # Load the dataset
-    multiwoz_dataset = MultiWOZDataset(tokenizer_name=args.tokenizer_name,
-                                       label_column='actions',
-                                       use_columns=['actions', 'utterance'],
-                                       max_seq_length=args.max_seq_length,
-                                       additional_special_tokens=SPECIAL_TOKENS,
-                                       data_path=args.data_path,
-                                       domains=args.domains)
+    multiwoz_dataset = MultiWOZDatasetActions(tokenizer_name=args.tokenizer_name,
+                                              label_column='actions',
+                                              use_columns=['actions', 'utterance'],
+                                              max_seq_length=args.max_seq_length,
+                                              additional_special_tokens=SPECIAL_TOKENS,
+                                              data_path=args.data_path,
+                                              domains=args.domains)
 
     if args.train_model:
         # Train the model
@@ -55,14 +55,14 @@ if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--pretrained_model",
-                        default='roberta-base-finetuned-2023-06-08-17-45-19',
+                        # default='roberta-base-finetuned-2023-06-08-17-45-19',
                         # default='roberta-base',
-                        # default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
+                        default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
                         # default="/home/safar/HCN/models/hf_multiwoz_restaurant",
-                        # default="../../models/",
+                        default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
@@ -94,8 +94,8 @@ if __name__ == "__main__":
                         choices=['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'precision_weighted',
                                  'recall_macro', 'recall_weighted'])
     parser.add_argument("--data_path",
-                        default="/home/safar/HCN/data/huggingface_data",
-                        # default="../../data/huggingface_data",
+                        # default="/home/safar/HCN/data/huggingface_data",
+                        default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
     parser.add_argument("--domains", default=['restaurant'], nargs='*')

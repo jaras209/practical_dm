@@ -13,7 +13,7 @@ from transformers import AutoModelForSequenceClassification, pipelines, Pipeline
 from transformers.pipelines.base import KeyDataset
 
 from database import MultiWOZDatabase
-from huggingface_multiwoz_dataset import MultiWOZDataset
+from huggingface_multiwoz_dataset import MultiWOZDatasetActions
 from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -203,13 +203,13 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(multiwoz_dataset: MultiWOZDataset, model_path: Path, top_k: int = 5,
+def evaluate(multiwoz_dataset: MultiWOZDatasetActions, model_path: Path, top_k: int = 5,
              only_dataset: str = None):
     """
     Evaluate the model on the datasets in multiwoz_dataset.
 
     Args:
-        multiwoz_dataset (MultiWOZDataset): The dataset object containing the dataset and tokenizer.
+        multiwoz_dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
         model_path (Path): The path to the trained model.
         top_k (int, optional): The top k actions to consider in the model pipeline. Defaults to 5.
         only_dataset (str, optional): If set, only evaluate the model on the specified dataset. Defaults to None.
