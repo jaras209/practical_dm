@@ -1,6 +1,7 @@
 import logging
 import pickle
 import random
+from abc import abstractmethod
 from pathlib import Path
 import datasets
 import numpy as np
@@ -236,7 +237,6 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
             database_results = get_database_results(database, belief_state)
             example.update({
                 'new_belief_state': copy.deepcopy(belief_state),
-                # 'state_update': state_update,
                 'database_results': database_results
             })
 
@@ -271,21 +271,19 @@ def load_multiwoz_dataset(split: str,
                           domains: List[str] = None,
                           context_len: int = None,
                           only_single_domain: bool = False,
-                          data_path: Union[Path, str] = "data/huggingface_data",
-                          strip_domain: bool = False,
-                          save_interval: int = 1000) -> pd.DataFrame:
+                          root_cache_path: Union[Path, str] = "data/huggingface_data",
+                          strip_domain: bool = False) -> pd.DataFrame:
     """
     Load and preprocess the MultiWOZ 2.2 dataset using the HuggingFace datasets library.
 
     Args:
         split (str): Which subset of the dataset to load (train, test, or validation).
         database (MultiWOZDatabase): The database with the query method.
-        domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+        domains (List[str], optional): A list of domains to include in the dataset. If None or empty, all domains are included.
         context_len (int, optional): The maximum length of the conversation history to keep for each example.
         only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
-        data_path (Union[Path, str], optional): The path to the directory where the preprocessed data should be saved.
+        root_cache_path (Union[Path, str], optional): The path to the directory where the preprocessed cahed data will be saved.
         strip_domain (bool, optional): Whether to remove domain prefixes from slot names in the dataset.
-        save_interval (int, optional): The number of dialogues to process before saving the data to a file.
 
     Returns:
         pd.DataFrame: A Pandas DataFrame containing the preprocessed dataset.
@@ -294,7 +292,7 @@ def load_multiwoz_dataset(split: str,
         FileNotFoundError: If the MultiWOZDatabase cannot be found at the specified path.
     """
     logging.info(f"Loading MultiWOZ dataset, split={split}, domains={domains}, context_len={context_len}, "
-                 f"only_single_domain={only_single_domain}, data_path={data_path}")
+                 f"only_single_domain={only_single_domain}, data_path={root_cache_path}")
 
     if not domains:
         # If no domains are specified, we use all of them
@@ -305,10 +303,10 @@ def load_multiwoz_dataset(split: str,
     domains.sort()
 
     # Create cache directory path from data path
-    cache_path = Path(data_path) / "cache"
+    cache_path = Path(root_cache_path) / "cache"
     cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
 
-    # Create cache directory, if it doesn't exist
+    # Create cache directory if it doesn't exist
     cache_path.mkdir(exist_ok=True, parents=True)
 
     # Create file path for current split (train/test/val)
@@ -393,42 +391,90 @@ def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict
     return '{' + result + '}'
 
 
+class MultiWOZDataset:
+    def __init__(self,
+                 context_len: int = 1,
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+
+        """
+        super().__init__()
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        logging.info(f"Domains: {self.domains}")
+
+    def load_dataset(self, root_cache_path: Union[str, Path] = "../huggingface_data", strip_domain: bool = False):
+        """
+        Load the MultiWOZ dataset into a DataFrame.
+
+        Args:
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The loaded dataset.
+        """
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=self.domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=self.domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=self.domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        return train_df, val_df, test_df
+
+
 class MultiWOZDatasetActions:
     def __init__(self,
                  tokenizer_name: str,
-                 label_column: str,
-                 use_columns: List[str],
                  context_len: int = 1,
                  max_seq_length: int = None,
-                 val_size: float = 0.3,
                  additional_special_tokens: List[str] = None,
-                 data_path: str = "../huggingface_data",
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
                  domains: List[str] = None,
                  only_single_domain: bool = False,
-                 batch_size: int = 32):
+                 batch_size: int = 32,
+                 strip_domain: bool = False):
         """
         Initialize the MultiWOZDataset class.
 
         Args:
             tokenizer_name (str): The name of the tokenizer to use.
-            label_column (str): The name of the label column in the dataset.
-            use_columns (List[str]): A list of columns to use in the dataset.
             context_len (int, optional): The maximum length of the conversation history to keep for each example.
             max_seq_length (int, optional): The maximum sequence length for tokenized input.
-            val_size (float, optional): The proportion of the dataset to use for validation.
             additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
-            data_path (str, optional): The path to the directory where the preprocessed data should be saved.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
             domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
             only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
             batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
         """
         super().__init__()
         self.tokenizer_name = tokenizer_name
-        self.label_column = label_column
-        self.use_columns = use_columns
         self.max_seq_length = max_seq_length
         self.context_len = context_len
-        self.val_size = val_size
         self.domains = domains
         self.only_single_domain = only_single_domain
         self.batch_size = batch_size
@@ -438,7 +484,7 @@ class MultiWOZDatasetActions:
                                                        additional_special_tokens=additional_special_tokens)
 
         # Load MultiWoz Database, which is locally saved at database_path
-        database_path = Path(data_path) / "database"
+        database_path = Path(root_database_path) / "database"
         self.database = MultiWOZDatabase(database_path)
 
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
@@ -446,17 +492,20 @@ class MultiWOZDatasetActions:
 
         # Load train/val/test datasets into DataFrames
         train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
-                                         data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
         val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
-                                       data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
-                                        data_path=data_path, domains=domains, only_single_domain=self.only_single_domain)
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
         # Gather unique labels which are used in 'label' <-> 'integers' map
         unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
 
         # Specify the file path where you want to save the actions
-        actions_path = Path(data_path) / "unique_actions.txt"
+        actions_path = Path(root_cache_path) / "unique_actions.txt"
 
         # Open the file in write mode
         with actions_path.open("w") as file:
@@ -479,7 +528,7 @@ class MultiWOZDatasetActions:
         val_dataset = self.create_huggingface_dataset(val_df)
         test_dataset = self.create_huggingface_dataset(test_df)
 
-        # Create datasets dictionary
+        # Create dataset dictionary
         self.dataset = datasets.DatasetDict({
             'train': train_dataset,
             'test': test_dataset,
@@ -519,7 +568,7 @@ class MultiWOZDatasetActions:
         # Convert the belief states in the example batch into string format.
         belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
-        # Convert the database_results in the example batch into string format and als string with counts
+        # Convert the database_results in the example batch into string format and also string with counts
         # database_results = list(map(database_results_to_str, example_batch['database_results']))
         database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
 
@@ -533,8 +582,10 @@ class MultiWOZDatasetActions:
                          db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
                          belief_states, database_results_count, contexts, utterances))
 
+        # TODO: try padding to 'longest' instead of 'max_length'
         # Use the tokenizer to convert these strings into a format suitable for model input
-        tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
+        tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length,
+                                   return_tensors='pt')
 
         # Check if any text was truncated
         if (long_texts := sum([len(text.split()) > self.max_seq_length for text in texts])) > 0:
@@ -582,3 +633,122 @@ class MultiWOZDatasetActions:
 
     def get_label2id(self) -> Dict[str, int]:
         return {label: i for i, label in enumerate(self.label_encoder.classes_)}
+
+
+class MultiWOZBeliefUpdate:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_seq_length: int = None,
+                 max_target_length: int = None,
+                 additional_special_tokens: List[str] = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_seq_length (int, optional): The maximum sequence length for tokenized input.
+            max_target_length (int, optional): The maximum sequence length for the output.
+            additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
+        """
+        super().__init__()
+        self.tokenizer_name = tokenizer_name
+        self.max_seq_length = max_seq_length
+        self.max_target_length = max_target_length
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
+
+        # Initialize pretrained tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        # Create HuggingFace datasets
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
+        test_dataset = self.create_huggingface_dataset(test_df)
+
+        # Create datasets dictionary
+        self.dataset = datasets.DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset,
+            'val': val_dataset}
+        )
+
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
+        """
+        Creates HuggingFace dataset from pandas DataFrame
+        :param df: input DataFrame
+        :return: output HuggingFace dataset
+        """
+        # Create HuggingFace dataset from Dataset
+        dataset = datasets.Dataset.from_pandas(df)
+
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
+
+        return dataset
+
+    def tokenize_and_cast_function(self,
+                                   example_batch: Dict[str, Any]) -> Dict[str, Union[List[str], List[int], np.ndarray]]:
+        utterances = example_batch['utterance']
+
+        old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+
+        contexts = list(map(lambda x: self.tokenizer.sep_token.join(x), example_batch['context']))
+
+        texts = list(map(lambda belief, context, user_utter:
+                         TASK_DESCRIPTION + ' ' + ':' + ' ' + BELIEF + ' ' + belief + ' ' + CONTEXT + ' ' + context +
+                         ' ' + USER + ' ' + user_utter,
+                         old_belief_states, contexts, utterances))
+
+        tokenized_inputs = self.tokenizer(texts, padding='longest', truncation=True,
+                                          max_length=self.max_seq_length, return_tensors="pt")
+
+        tokenized_outputs = self.tokenizer(new_belief_states, padding='longest', truncation=True,
+                                           max_length=self.max_seq_length, return_tensors="pt")
+
+        labels = tokenized_outputs['input_ids']
+
+        # replace padding token id's of the labels by -100, so it's ignored by the loss
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        return {
+            'input_ids': tokenized_inputs['input_ids'],
+            'attention_mask': tokenized_inputs['attention_mask'],
+            'labels': labels,
+            'text': texts
+        }

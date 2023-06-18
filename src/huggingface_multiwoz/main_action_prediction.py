@@ -5,7 +5,7 @@ from pathlib import Path
 from constants import SPECIAL_TOKENS
 from evaluating import evaluate
 from huggingface_multiwoz_dataset import MultiWOZDatasetActions, belief_state_to_str
-from training import train
+from train_action_prediction import train
 
 
 def main(args):
@@ -16,20 +16,19 @@ def main(args):
         args: A Namespace object containing the parsed command-line arguments.
     """
     # Load the dataset
-    multiwoz_dataset = MultiWOZDatasetActions(tokenizer_name=args.tokenizer_name,
-                                              label_column='actions',
-                                              use_columns=['actions', 'utterance'],
-                                              max_seq_length=args.max_seq_length,
-                                              additional_special_tokens=SPECIAL_TOKENS,
-                                              data_path=args.data_path,
-                                              domains=args.domains)
+    action_prediction_dataset = MultiWOZDatasetActions(tokenizer_name=args.tokenizer_name,
+                                                       max_seq_length=args.max_seq_length,
+                                                       additional_special_tokens=SPECIAL_TOKENS,
+                                                       root_cache_path=args.data_path,
+                                                       root_database_path=args.data_path,
+                                                       domains=args.domains)
 
     if args.train_model:
         # Train the model
         logging.info("Training the model...")
-        trained_model_path = train(multiwoz_dataset=multiwoz_dataset,
+        trained_model_path = train(dataset=action_prediction_dataset,
                                    model_root_path=args.model_root_path,
-                                   pretrained_model=args.pretrained_model,
+                                   model_name_or_path=args.model_name_or_path,
                                    batch_size=args.batch_size,
                                    learning_rate=args.learning_rate,
                                    epochs=args.epochs,
@@ -47,22 +46,22 @@ def main(args):
 
     # Evaluate the model
     logging.info("Evaluating the model...")
-    evaluate(multiwoz_dataset=multiwoz_dataset, model_path=trained_model_path)
+    evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
     logging.info("Model evaluation complete. Results saved to files.")
 
 
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pretrained_model",
+    parser.add_argument("--model_name_or_path",
                         # default='roberta-base-finetuned-2023-06-08-17-45-19',
                         # default='roberta-base',
                         default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        # default="/home/safar/HCN/models/hf_multiwoz_restaurant",
-                        default="../../models/",
+                        default="/home/safar/HCN/models/hf_multiwoz_restaurant",
+                        # default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
@@ -75,30 +74,30 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
     parser.add_argument("--early_stopping_patience", default=5, type=int, help="Number of epochs after which the "
-                                                                                "training is ended if there is no "
-                                                                                "improvement on validation data")
+                                                                               "training is ended if there is no "
+                                                                               "improvement on validation data")
     parser.add_argument("--warmup_steps", type=int, default=100, help="Number of steps for the warmup phase. During "
-                                                                        "this phase, the learning rate gradually "
-                                                                        "increases to the initial learning rate.")
+                                                                      "this phase, the learning rate gradually "
+                                                                      "increases to the initial learning rate.")
     parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps after which the training "
-                                                                        "progress will be logged.")
+                                                                       "progress will be logged.")
     parser.add_argument("--save_steps", type=int, default=100,
                         help="Number of steps after which the current state of the model will be saved.")
     parser.add_argument("--strategy", type=str, default='epoch',
                         help="Strategy for model evaluation/logging and saving during training. "
                              "Could be either 'steps' or 'epoch'.",
                         choices=['steps', 'epoch'])
-    parser.add_argument("--metric_for_best_model", type=str, default='f1_macro', help="Metric to monitor for early "
-                                                                                      "stopping and saving the best "
-                                                                                      "model.",
+    parser.add_argument("--metric_for_best_model", type=str, default='f1_weighted', help="Metric to monitor for early "
+                                                                                         "stopping and saving the best "
+                                                                                         "model.",
                         choices=['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'precision_weighted',
                                  'recall_macro', 'recall_weighted'])
     parser.add_argument("--data_path",
-                        # default="/home/safar/HCN/data/huggingface_data",
-                        default="../../data/huggingface_data",
+                        default="/home/safar/HCN/data/huggingface_data",
+                        # default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
-    parser.add_argument("--domains", default=['restaurant'], nargs='*')
+    parser.add_argument("--domains", default=[], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
     parser.set_defaults(train_model=False)

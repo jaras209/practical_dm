@@ -1,55 +1,34 @@
 import logging
-import re
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Any, Tuple, Union
 
 from transformers import (
-    AutoModelForSequenceClassification,
+    T5ForConditionalGeneration,
+    T5TokenizerFast,
     Trainer,
     TrainingArguments,
     EarlyStoppingCallback
 )
 import torch
 
-from metrics import MetricsCallback, compute_metrics
-from huggingface_multiwoz_dataset import MultiWOZDatasetActions
+from metrics import MetricsCallback, compute_belief_metrics
+from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate
+from utils import highest_checkpoint
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
 
 
-def highest_checkpoint(file_path: Path) -> Tuple[int, Path]:
-    """
-    Extract the checkpoint number from the given file path and return a tuple with the checkpoint number and
-    the file path.
-
-    Args:
-        file_path (Path): The file path to a checkpoint file.
-
-    Returns:
-        Tuple[int, Path]: A tuple containing the checkpoint number as an integer and the original file path.
-    """
-    # Use regex to find a sequence of digits at the end of the file path string.
-    digit_sequence = re.findall("\d+$", str(file_path))
-
-    # If a sequence of digits is found, convert it to an integer.
-    # Otherwise, set the checkpoint number to -1.
-    checkpoint_number = int(digit_sequence[0]) if digit_sequence else -1
-
-    # Return a tuple containing the checkpoint number and the original file path.
-    return checkpoint_number, file_path
-
-
-def train(multiwoz_dataset: MultiWOZDatasetActions,
+def train(dataset: MultiWOZBeliefUpdate,
           model_root_path: str,
-          pretrained_model: str,
+          model_name_or_path: str,
           batch_size: int,
           learning_rate: float,
           epochs: int,
           early_stopping_patience: int,
           local_model: bool = False,
-          strategy: str = 'steps',
+          strategy: str = 'epoch',
           logging_steps: int = 100,
           save_steps: int = 100,
           warmup_steps: int = 100,
@@ -58,9 +37,9 @@ def train(multiwoz_dataset: MultiWOZDatasetActions,
     Train the model using the given arguments and dataset.
 
     Args:
-        multiwoz_dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
-        model_root_path (str): The root directory for saving the model.
-        pretrained_model (str): The name of the pre-trained model or HuggingFace model.
+        dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
+        model_root_path (str): The root directory for saving and loading the model.
+        model_name_or_path (str): The name or the path of the pre-trained model in model_root_path or HuggingFace model.
         batch_size (int): Batch size for training and evaluation.
         learning_rate (float): Learning rate for the optimizer.
         epochs (int): The number of training epochs.
@@ -76,39 +55,35 @@ def train(multiwoz_dataset: MultiWOZDatasetActions,
         Path: The directory where the trained model is saved.
     """
     if local_model:
-        pretrained_model = Path(model_root_path) / pretrained_model
+        model_name_or_path = Path(model_root_path) / model_name_or_path
     else:
-        pretrained_model = pretrained_model
+        model_name_or_path = model_name_or_path
 
     # Check if we are resuming training from a checkpoint.
     checkpoint = None
     if local_model:
-        checkpoints = list(pretrained_model.glob("checkpoint-*"))
+        checkpoints = list(model_name_or_path.glob("checkpoint-*"))
         if len(checkpoints) > 0:
             checkpoint = max(checkpoints, key=highest_checkpoint)
 
-    run_name = f'{Path(pretrained_model).name}-finetuned-{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}'
+    run_name = f'{Path(model_name_or_path).name}-finetuned-{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}'
     output_path = Path(model_root_path) / run_name
 
     # Create a directory for tensorboard logs
     tensorboard_logs_dir = Path(output_path) / 'tensorboard-logs'
 
     if checkpoint:
-        logging.info(f"Resuming training from checkpoint {checkpoint} using {pretrained_model} as base model.")
+        logging.info(f"Resuming training from checkpoint {checkpoint} using {model_name_or_path} as base model.")
     else:
-        logging.info(f"Starting training from scratch using {pretrained_model} as base model.")
+        logging.info(f"Starting training from scratch using {model_name_or_path} as base model.")
     logging.info(f"Saving model to {output_path}.")
 
     num_of_devices = torch.cuda.device_count()
     logging.info(f"Using as the main device: {device}")
     logging.info(f"Number of devices: {num_of_devices}")
 
-    # Create the model to train.
-    model = AutoModelForSequenceClassification.from_pretrained(pretrained_model,
-                                                               num_labels=multiwoz_dataset.num_labels,
-                                                               id2label=multiwoz_dataset.get_id2label(),
-                                                               label2id=multiwoz_dataset.get_label2id(),
-                                                               problem_type="multi_label_classification").to(device)
+    # Create the model for fine-tuning
+    model = T5ForConditionalGeneration.from_pretrained(model_name_or_path)
 
     # Calculate some useful values for later use in TrainingArguments.
     steps_factor = batch_size * num_of_devices
@@ -143,21 +118,16 @@ def train(multiwoz_dataset: MultiWOZDatasetActions,
         save_total_limit=1,
         warmup_steps=warmup_steps_calculated,
     )
-    # Resize the model embedding matrix to match the tokenizer, which is extended by BELIEF, CONTEXT, USER tokens.
-    model.resize_token_embeddings(len(multiwoz_dataset.tokenizer))
 
-    # Prepare model for training, i.e. this command does not train the model.
+    # Prepare model for training, i.e., this command does not train the model.
     model.train()
 
-    # Create HuggingFace Trainer, which provides an API for feature-complete training in PyTorch for most
-    # standard use cases. The API supports distributed training on multiple GPUs/TPUs, mixed precision through
-    # NVIDIA Apex and Native AMP for PyTorch. The Trainer contains the basic training loop which supports the
-    # above features.
+    # Create HuggingFace Trainer
     trainer = Trainer(model=model,
                       args=training_args,
-                      train_dataset=multiwoz_dataset.dataset['train'],
-                      eval_dataset=multiwoz_dataset.dataset['val'],
-                      compute_metrics=compute_metrics,
+                      train_dataset=dataset.dataset['train'],
+                      eval_dataset=dataset.dataset['val'],
+                      compute_metrics=compute_belief_metrics,
                       callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience),
                                  MetricsCallback()])
 

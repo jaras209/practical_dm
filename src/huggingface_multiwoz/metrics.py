@@ -5,6 +5,8 @@ import numpy as np
 from transformers import TrainerCallback, TrainingArguments, TrainerState, TrainerControl, EvalPrediction
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 
+from evaluate import load
+
 
 class MetricsCallback(TrainerCallback):
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
@@ -21,14 +23,21 @@ class MetricsCallback(TrainerCallback):
                 csv_writer.writerow(row_dict)
 
 
-def compute_metrics(eval_pred):
-    logits, y_true = eval_pred
-    y_pred = (logits >= 0).astype(np.float32)
-    return {"accuracy": accuracy_score(y_true=y_true, y_pred=y_pred),
-            "recall_weighted": recall_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "precision_weighted": precision_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "f1_weighted": f1_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "recall_macro": recall_score(y_true=y_true, y_pred=y_pred, average='macro'),
-            "precision_macro": precision_score(y_true=y_true, y_pred=y_pred, average='macro'),
-            "f1_macro": f1_score(y_true=y_true, y_pred=y_pred, average='macro')
+def compute_actions_metrics(eval_predictions: EvalPrediction):
+    logits, references = eval_predictions.predictions, eval_predictions.label_ids
+    predictions = (logits >= 0).astype(np.float32)
+    return {"accuracy": accuracy_score(y_true=references, y_pred=predictions),
+            "recall_weighted": recall_score(y_true=references, y_pred=predictions, average='weighted'),
+            "precision_weighted": precision_score(y_true=references, y_pred=predictions, average='weighted'),
+            "f1_weighted": f1_score(y_true=references, y_pred=predictions, average='weighted'),
+            "recall_macro": recall_score(y_true=references, y_pred=predictions, average='macro'),
+            "precision_macro": precision_score(y_true=references, y_pred=predictions, average='macro'),
+            "f1_macro": f1_score(y_true=references, y_pred=predictions, average='macro')
             }
+
+
+def compute_belief_metrics(eval_predictions: EvalPrediction):
+    logits, references = eval_predictions.predictions, eval_predictions.label_ids
+    predictions = np.argmax(logits, axis=2)
+
+    return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
