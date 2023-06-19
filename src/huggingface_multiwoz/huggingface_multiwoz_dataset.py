@@ -693,8 +693,6 @@ class MultiWOZBeliefUpdate:
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
-        if self.tokenizer.sep_token is None:
-            self.tokenizer.add_special_tokens({'sep_token': SEP_TOKEN_BELIEF})
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
@@ -732,12 +730,12 @@ class MultiWOZBeliefUpdate:
         old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
-        contexts = list(map(lambda x: self.tokenizer.sep_token.join(x), example_batch['context']))
+        separator = self.tokenizer.sep_token if self.tokenizer.sep_token is not None else SEPARATOR_BELIEF_UPDATE
+        contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter:
-                         TASK_DESCRIPTION + ' ' + ':' + ' ' + BELIEF + ' ' + belief + ' ' + CONTEXT + ' ' + context +
-                         ' ' + USER + ' ' + user_utter,
-                         old_belief_states, contexts, utterances))
+                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + ':' + ' ' + BELIEF + ' ' + belief + ' ' + CONTEXT +
+                         ' ' + context + ' ' + USER + ' ' + user_utter, old_belief_states, contexts, utterances))
 
         tokenized_inputs = self.tokenizer(texts, padding='longest', truncation=True,
                                           max_length=self.max_seq_length, return_tensors="pt")
