@@ -304,7 +304,7 @@ def load_multiwoz_dataset(split: str,
 
     # Create cache directory path from data path
     cache_path = Path(root_cache_path) / "cache"
-    cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}")
+    cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}_context-len_{context_len}")
 
     # Create cache directory if it doesn't exist
     cache_path.mkdir(exist_ok=True, parents=True)
