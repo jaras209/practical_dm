@@ -487,6 +487,7 @@ class MultiWOZDatasetActions:
         database_path = Path(root_database_path) / "database"
         self.database = MultiWOZDatabase(database_path)
 
+        logging.info(f"Tokenizer: {self.tokenizer_name}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
 
@@ -681,6 +682,7 @@ class MultiWOZBeliefUpdate:
         database_path = Path(root_database_path) / "database"
         self.database = MultiWOZDatabase(database_path)
 
+        logging.info(f"Tokenizer: {self.tokenizer_name}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
 
