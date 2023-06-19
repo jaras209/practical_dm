@@ -730,7 +730,7 @@ class MultiWOZBeliefUpdate:
         old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
-        separator = self.tokenizer.sep_token if self.tokenizer.sep_token is not None else SEPARATOR_BELIEF_UPDATE
+        separator = SEPARATOR_BELIEF_UPDATE
         contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter:
