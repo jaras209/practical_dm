@@ -737,10 +737,10 @@ class MultiWOZBeliefUpdate:
                          TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + ':' + ' ' + BELIEF + ' ' + belief + ' ' + CONTEXT +
                          ' ' + context + ' ' + USER + ' ' + user_utter, old_belief_states, contexts, utterances))
 
-        tokenized_inputs = self.tokenizer(texts, padding='longest', truncation=True,
+        tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
                                           max_length=self.max_seq_length, return_tensors="pt")
 
-        tokenized_outputs = self.tokenizer(new_belief_states, padding='longest', truncation=True,
+        tokenized_outputs = self.tokenizer(new_belief_states, padding='max_length', truncation=True,
                                            max_length=self.max_seq_length, return_tensors="pt")
 
         labels = tokenized_outputs['input_ids']
