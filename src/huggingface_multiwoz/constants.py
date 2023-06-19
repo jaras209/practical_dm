@@ -4,6 +4,7 @@ CONTEXT = '<|CONTEXT|>'
 USER = '<|USER|>'
 DATABASE = '<|DATABASE|>'
 DATABASE_COUNTS = '<|DATABASE_COUNTS|>'
+SEP_TOKEN_BELIEF = 'Next utterance:'
 TASK_DESCRIPTION = 'Update belief state'
 SPECIAL_TOKENS = [BELIEF, DATABASE, DATABASE_COUNTS, CONTEXT, USER]
 DOMAIN_NAMES = sorted({'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'})

@@ -693,6 +693,8 @@ class MultiWOZBeliefUpdate:
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
+        if self.tokenizer.sep_token is None:
+            self.tokenizer.add_special_tokens({'sep_token': SEP_TOKEN_BELIEF})
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
