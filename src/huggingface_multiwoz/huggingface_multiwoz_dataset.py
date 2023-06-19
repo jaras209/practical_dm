@@ -356,11 +356,11 @@ def load_multiwoz_dataset(split: str,
 def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
     result = '{'
     for domain, slot_values in belief_state.items():
-        slot_values_str = ','.join(f" {slot} : {value} " for slot, value in slot_values.items() if value != "None")
+        slot_values_str = ', '.join(f"{slot}: {value}" for slot, value in slot_values.items() if value != "None")
         if slot_values_str:
-            result += f" {domain} {'{'}{slot_values_str}{'}'}"
+            result += f"{domain}: {'{'}{slot_values_str}{'}'}"
 
-    result += ' }'
+    result += '}'
     return result
 
 
@@ -375,13 +375,13 @@ def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, 
             if len(result_list) > threshold:
                 result_list = random.sample(result_list, threshold)
 
-            result_list_str = '[' + ','.join(
-                '{' + ','.join(f" {slot} : {value} " for slot, value in dict_element.items()) + '}'
+            result_list_str = '[' + ', '.join(
+                '{' + ','.join(f"{slot}: {value}" for slot, value in dict_element.items()) + '}'
                 for dict_element in result_list) + ']'
 
-        result += f" {domain} : {result_list_str}"
+        result += f"{domain}: {result_list_str}"
 
-    result += ' }'
+    result += '}'
     return result
 
 
