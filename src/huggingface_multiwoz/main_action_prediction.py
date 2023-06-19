@@ -17,7 +17,7 @@ def main(args):
     """
     # Load the dataset
     action_prediction_dataset = MultiWOZDatasetActions(tokenizer_name=args.tokenizer_name,
-                                                       max_seq_length=args.max_seq_length,
+                                                       max_seq_length=args.max_source_length,
                                                        additional_special_tokens=SPECIAL_TOKENS,
                                                        root_cache_path=args.data_path,
                                                        root_database_path=args.data_path,

@@ -588,9 +588,11 @@ class MultiWOZDatasetActions:
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length,
                                    return_tensors='pt')
 
-        # Check if any text was truncated
-        if (long_texts := sum([len(text.split()) > self.max_seq_length for text in texts])) > 0:
-            print(f'Warning: {long_texts} texts have been truncated to fit the maximum token length limit.')
+        # Check if any input texts were truncated
+        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_seq_length for text in
+                           texts]
+        num_truncated = sum(truncated_texts)
+        logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
 
         # Cast action labels to binary arrays.
         # Create a binary array where each row corresponds to an example,
@@ -640,7 +642,7 @@ class MultiWOZBeliefUpdate:
     def __init__(self,
                  tokenizer_name: str,
                  context_len: int = 1,
-                 max_seq_length: int = None,
+                 max_source_length: int = None,
                  max_target_length: int = None,
                  additional_special_tokens: List[str] = None,
                  root_cache_path: Union[str, Path] = "../huggingface_data",
@@ -655,7 +657,7 @@ class MultiWOZBeliefUpdate:
         Args:
             tokenizer_name (str): The name of the tokenizer to use.
             context_len (int, optional): The maximum length of the conversation history to keep for each example.
-            max_seq_length (int, optional): The maximum sequence length for tokenized input.
+            max_source_length (int, optional): The maximum sequence length for tokenized input.
             max_target_length (int, optional): The maximum sequence length for the output.
             additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
             root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
@@ -668,7 +670,7 @@ class MultiWOZBeliefUpdate:
         """
         super().__init__()
         self.tokenizer_name = tokenizer_name
-        self.max_seq_length = max_seq_length
+        self.max_source_length = max_source_length
         self.max_target_length = max_target_length
         self.context_len = context_len
         self.domains = domains
@@ -738,14 +740,27 @@ class MultiWOZBeliefUpdate:
                          ' ' + context + ' ' + USER + ' ' + user_utter, old_belief_states, contexts, utterances))
 
         tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
-                                          max_length=self.max_seq_length, return_tensors="pt")
+                                          max_length=self.max_source_length, return_tensors="pt")
 
         tokenized_outputs = self.tokenizer(new_belief_states, padding='max_length', truncation=True,
-                                           max_length=self.max_seq_length, return_tensors="pt")
+                                           max_length=self.max_target_length, return_tensors="pt")
 
+        # Check if any input texts were truncated
+        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length for text in
+                           texts]
+        num_truncated = sum(truncated_texts)
+        logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+
+        # Check if any output texts were truncated
+        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length
+                           for text in new_belief_states]
+        num_truncated = sum(truncated_texts)
+        logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(new_belief_states)}")
+
+        # Get labels
         labels = tokenized_outputs['input_ids']
 
-        # replace padding token id's of the labels by -100, so it's ignored by the loss
+        # Replace padding token id's of the labels by -100, so it's ignored by the loss
         labels[labels == self.tokenizer.pad_token_id] = -100
 
         return {
