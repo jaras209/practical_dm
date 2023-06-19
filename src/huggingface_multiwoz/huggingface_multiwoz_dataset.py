@@ -487,10 +487,6 @@ class MultiWOZDatasetActions:
         database_path = Path(root_database_path) / "database"
         self.database = MultiWOZDatabase(database_path)
 
-        logging.info(f"Tokenizer: {self.tokenizer_name}")
-        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
-        logging.info(f"Domains: {self.domains}")
-
         # Load train/val/test datasets into DataFrames
         train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
                                          root_cache_path=root_cache_path, domains=domains,
@@ -501,6 +497,10 @@ class MultiWOZDatasetActions:
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name}")
+        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
+        logging.info(f"Domains: {self.domains}")
 
         # Gather unique labels which are used in 'label' <-> 'integers' map
         unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
@@ -682,10 +682,6 @@ class MultiWOZBeliefUpdate:
         database_path = Path(root_database_path) / "database"
         self.database = MultiWOZDatabase(database_path)
 
-        logging.info(f"Tokenizer: {self.tokenizer_name}")
-        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
-        logging.info(f"Domains: {self.domains}")
-
         # Load train/val/test datasets into DataFrames
         train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
                                          root_cache_path=root_cache_path, domains=domains,
@@ -696,6 +692,10 @@ class MultiWOZBeliefUpdate:
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
+        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
+        logging.info(f"Domains: {self.domains}")
 
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)
