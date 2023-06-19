@@ -54,7 +54,7 @@ if __name__ == "__main__":
                              "model is used for training.")
     parser.add_argument("--tokenizer_name", default='google/flan-t5-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
-    parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
+    parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to model")
     parser.add_argument("--max_target_length", default=100, type=int, help="Max seq length of output to model")
     parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
