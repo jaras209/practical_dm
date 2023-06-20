@@ -746,18 +746,22 @@ class MultiWOZBeliefUpdate:
                                            max_length=self.max_target_length, return_tensors="pt")
 
         # Check if any input texts were truncated
-        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length for text in
-                           texts]
-        num_truncated = sum(truncated_texts)
+        truncated_texts = [text for text in texts if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length]
+        num_truncated = len(truncated_texts)
         if num_truncated > 0:
             logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+            for tt in truncated_texts:
+                logging.warning(f"Truncated input text: {tt}")
 
         # Check if any output texts were truncated
-        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length
-                           for text in new_belief_states]
-        num_truncated = sum(truncated_texts)
+        truncated_texts = [text for text in new_belief_states if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length]
+        num_truncated = len(truncated_texts)
         if num_truncated > 0:
-            logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(new_belief_states)}")
+            logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
+            for tt in truncated_texts:
+                logging.warning(f"Truncated output text: {tt}")
 
         # Get labels
         labels = tokenized_outputs['input_ids']
