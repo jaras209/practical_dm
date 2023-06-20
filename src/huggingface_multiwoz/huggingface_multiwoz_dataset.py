@@ -697,7 +697,6 @@ class MultiWOZBeliefUpdate:
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
-        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
 
         # Create HuggingFace datasets

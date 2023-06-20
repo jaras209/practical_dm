@@ -117,6 +117,7 @@ def train(dataset: MultiWOZBeliefUpdate,
         metric_for_best_model=metric_for_best_model,
         save_total_limit=1,
         warmup_steps=warmup_steps_calculated,
+        eval_accumulation_steps=2,
     )
 
     # Prepare model for training, i.e., this command does not train the model.
