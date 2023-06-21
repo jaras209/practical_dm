@@ -125,6 +125,9 @@ def update_belief_state(belief_state: Dict[str, Dict[str, str]],
 
     # Iterate through each domain and state
     for domain, state in zip(domains, states):
+        if domain not in belief_state:
+            continue
+
         # Extract the slot names and values from the state
         slots = state['slots_values']['slots_values_name']
         values = state['slots_values']['slots_values_list']
@@ -134,7 +137,7 @@ def update_belief_state(belief_state: Dict[str, Dict[str, str]],
                             zip(slots, values)}
 
         # Update the belief state with the new slot-value pairs
-        belief_state.setdefault(domain, {}).update(slot_value_pairs)
+        belief_state[domain].update(slot_value_pairs)
 
     return belief_state
 
