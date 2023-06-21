@@ -1,3 +1,4 @@
+import json
 import logging
 import pickle
 import random
@@ -16,6 +17,9 @@ from transformers import AutoTokenizer
 from constants import *
 
 logging.basicConfig(level=logging.INFO)
+
+# Global variables
+ALL_POSSIBLE_SLOTS = {}
 
 
 def extract_act_type_slot_name_pairs(dialogue_acts,
@@ -104,17 +108,21 @@ def create_state_update(belief_state: Dict[str, Dict[str, str]],
 
 
 def update_belief_state(belief_state: Dict[str, Dict[str, str]],
-                        frame: Dict[str, List]) -> Dict[str, Dict[str, str]]:
+                        frame: Dict[str, List],
+                        remove_domain: bool = True) -> Dict[str, Dict[str, str]]:
     """
     Updates the belief state based on the given frame.
 
     Args:
         belief_state (Dict[str, Dict[str, str]]): The current belief state.
         frame (Dict[str, List]): A dictionary containing the domains and states for the current user turn.
+        remove_domain (bool, optional): Whether to remove the domain from the slots. Defaults to True.
+
 
     Returns:
         Dict[str, Dict[str, str]]: The updated belief state.
     """
+    global ALL_POSSIBLE_SLOTS
 
     # Extract the domains and states from the frame
     domains = frame['service']
@@ -127,10 +135,14 @@ def update_belief_state(belief_state: Dict[str, Dict[str, str]],
         values = state['slots_values']['slots_values_list']
 
         # Create a dictionary of slot-value pairs
-        slot_value_pairs = {slot: value[0] for slot, value in zip(slots, values)}
+        slot_value_pairs = {slot.split('-')[-1] if remove_domain else slot: value[0] for slot, value in
+                            zip(slots, values)}
 
         # Update the belief state with the new slot-value pairs
-        belief_state[domain].update(slot_value_pairs)
+        belief_state.setdefault(domain, {}).update(slot_value_pairs)
+
+        # Update the all_possible_slots dictionary
+        ALL_POSSIBLE_SLOTS.setdefault(domain, set()).update(slot_value_pairs.keys())
 
     return belief_state
 
@@ -583,7 +595,6 @@ class MultiWOZDatasetActions:
                          db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
                          belief_states, database_results_count, contexts, utterances))
 
-        # TODO: try padding to 'longest' instead of 'max_length'
         # Use the tokenizer to convert these strings into a format suitable for model input
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length,
                                    return_tensors='pt')
@@ -699,6 +710,12 @@ class MultiWOZBeliefUpdate:
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Domains: {self.domains}")
 
+        # Save all possible slots into a file to check if the slots are correct
+        all_possible_slots_path = Path(root_cache_path) / "all_possible_slots.json"
+        sorted_all_possible_slots = {domain: sorted(slots) for domain, slots in ALL_POSSIBLE_SLOTS.items()}
+        with open(all_possible_slots_path, 'w') as file:
+            json.dump(sorted_all_possible_slots, file, indent=4)
+
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)
         val_dataset = self.create_huggingface_dataset(val_df)
@@ -761,7 +778,7 @@ class MultiWOZBeliefUpdate:
         if num_truncated > 0:
             logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
             for i, tt in enumerate(truncated_texts):
-                logging.warning(f"Truncated input {i}/{num_truncated}: {tt}")
+                logging.warning(f"Truncated output {i}/{num_truncated}: {tt}")
 
         # Get labels
         labels = tokenized_outputs['input_ids']
