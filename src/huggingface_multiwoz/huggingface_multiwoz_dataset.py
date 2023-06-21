@@ -741,8 +741,9 @@ class MultiWOZBeliefUpdate:
         contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter:
-                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + ':' + ' ' + BELIEF + ' ' + belief + ' ' + CONTEXT +
-                         ' ' + context + ' ' + USER + ' ' + user_utter, old_belief_states, contexts, utterances))
+                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + BELIEF_BELIEF_UPDATE + ' ' + belief + ' '
+                         + CONTEXT_BELIEF_UPDATE + ' ' + context + ' ' + USER_BELIEF_UPDATE + ' ' + user_utter,
+                         old_belief_states, contexts, utterances))
 
         tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
                                           max_length=self.max_source_length, return_tensors="pt")
@@ -778,5 +779,4 @@ class MultiWOZBeliefUpdate:
             'input_ids': tokenized_inputs['input_ids'],
             'attention_mask': tokenized_inputs['attention_mask'],
             'labels': labels,
-            'text': texts
         }
