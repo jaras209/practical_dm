@@ -18,6 +18,9 @@ from constants import *
 
 logging.basicConfig(level=logging.INFO)
 
+TRUNCATED_INPUTS = 0
+TRUNCATED_OUTPUTS = 0
+
 
 def extract_act_type_slot_name_pairs(dialogue_acts,
                                      strip_domain: bool = False) -> list[str]:
@@ -713,7 +716,10 @@ class MultiWOZBeliefUpdate:
         val_dataset = self.create_huggingface_dataset(val_df)
         test_dataset = self.create_huggingface_dataset(test_df)
 
-        # Create datasets dictionary
+        # Log number of truncated input and output examples
+        logging.info(f"Truncated inputs: {TRUNCATED_INPUTS}, truncated outputs: {TRUNCATED_OUTPUTS}")
+
+        # Create dataset dictionary
         self.dataset = datasets.DatasetDict({
             'train': train_dataset,
             'test': test_dataset,
@@ -736,6 +742,8 @@ class MultiWOZBeliefUpdate:
 
     def tokenize_and_cast_function(self,
                                    example_batch: Dict[str, Any]) -> Dict[str, Union[List[str], List[int], np.ndarray]]:
+        global TRUNCATED_INPUTS, TRUNCATED_OUTPUTS
+
         utterances = example_batch['utterance']
 
         old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
@@ -761,8 +769,7 @@ class MultiWOZBeliefUpdate:
         num_truncated = len(truncated_texts)
         if num_truncated > 0:
             logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
-            for i, tt in enumerate(truncated_texts):
-                logging.warning(f"Truncated input {i}/{num_truncated}: {tt}")
+            TRUNCATED_INPUTS += num_truncated
 
         # Check if any output texts were truncated
         truncated_texts = [text for text in new_belief_states if
@@ -770,8 +777,7 @@ class MultiWOZBeliefUpdate:
         num_truncated = len(truncated_texts)
         if num_truncated > 0:
             logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
-            for i, tt in enumerate(truncated_texts):
-                logging.warning(f"Truncated output {i}/{num_truncated}: {tt}")
+            TRUNCATED_OUTPUTS += num_truncated
 
         # Get labels
         labels = tokenized_outputs['input_ids']
