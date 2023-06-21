@@ -751,8 +751,8 @@ class MultiWOZBeliefUpdate:
         num_truncated = len(truncated_texts)
         if num_truncated > 0:
             logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
-            for tt in truncated_texts:
-                logging.warning(f"Truncated input text: {tt}")
+            for i, tt in enumerate(truncated_texts):
+                logging.warning(f"Truncated input {i}/{num_truncated}: {tt}")
 
         # Check if any output texts were truncated
         truncated_texts = [text for text in new_belief_states if
@@ -760,8 +760,8 @@ class MultiWOZBeliefUpdate:
         num_truncated = len(truncated_texts)
         if num_truncated > 0:
             logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
-            for tt in truncated_texts:
-                logging.warning(f"Truncated output text: {tt}")
+            for i, tt in enumerate(truncated_texts):
+                logging.warning(f"Truncated input {i}/{num_truncated}: {tt}")
 
         # Get labels
         labels = tokenized_outputs['input_ids']
