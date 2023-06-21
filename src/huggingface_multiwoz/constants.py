@@ -10,7 +10,7 @@ CONTEXT_BELIEF_UPDATE = 'Context:'
 USER_BELIEF_UPDATE = 'User:'
 TASK_DESCRIPTION_BELIEF_UPDATE = 'Update belief state:'
 SPECIAL_TOKENS = [BELIEF, DATABASE, DATABASE_COUNTS, CONTEXT, USER]
-DOMAIN_NAMES = sorted({'hotel', 'restaurant', 'bus', 'train', 'attraction', 'hospital', 'taxi'})
+DOMAIN_NAMES = sorted({'hotel', 'restaurant', 'bus', 'police', 'train', 'attraction', 'hospital', 'taxi'})
 OUTPUT_DF_COLUMNS = ['text', 'actions', 'predicted', 'dialogue_acts', 'system_utterance', 'scores']
 DOMAIN_SLOTS = dict(bus=sorted(["day", "departure", "destination", "leaveat"]),
                     hotel=sorted(["area", "bookday", "bookpeople", "bookstay", "internet", "name", "parking",
@@ -19,4 +19,5 @@ DOMAIN_SLOTS = dict(bus=sorted(["day", "departure", "destination", "leaveat"]),
                     train=sorted(["arriveby", "bookpeople", "day", "departure", "destination", "leaveat"]),
                     attraction=sorted(["area", "name", "type"]),
                     hospital=["department"],
+                    police=[],
                     taxi=sorted(["arriveby", "departure", "destination", "leaveat"]))
