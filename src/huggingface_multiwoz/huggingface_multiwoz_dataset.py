@@ -16,7 +16,7 @@ from database import MultiWOZDatabase
 from transformers import AutoTokenizer
 from constants import *
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 def extract_act_type_slot_name_pairs(dialogue_acts,
