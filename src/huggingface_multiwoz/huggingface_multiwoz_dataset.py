@@ -360,7 +360,8 @@ def load_multiwoz_dataset(split: str,
 def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
     result = ''
     for domain, slot_values in belief_state.items():
-        logging.debug(f"domain: {domain} slot_values: {slot_values}, type: {type(slot_values)}")
+        if slot_values is None:
+            continue
         slot_values_str = ', '.join(f"{slot}: {value}" for slot, value in slot_values.items() if value != "None")
         if slot_values_str:
             result += f"{domain} - {slot_values_str}; "
