@@ -18,9 +18,6 @@ from constants import *
 
 logging.basicConfig(level=logging.DEBUG)
 
-# Global variables
-ALL_POSSIBLE_SLOTS = {}
-
 
 def extract_act_type_slot_name_pairs(dialogue_acts,
                                      strip_domain: bool = False) -> list[str]:
@@ -122,8 +119,6 @@ def update_belief_state(belief_state: Dict[str, Dict[str, str]],
     Returns:
         Dict[str, Dict[str, str]]: The updated belief state.
     """
-    global ALL_POSSIBLE_SLOTS
-
     # Extract the domains and states from the frame
     domains = frame['service']
     states = frame['state']
@@ -140,9 +135,6 @@ def update_belief_state(belief_state: Dict[str, Dict[str, str]],
 
         # Update the belief state with the new slot-value pairs
         belief_state.setdefault(domain, {}).update(slot_value_pairs)
-
-        # Update the all_possible_slots dictionary
-        ALL_POSSIBLE_SLOTS.setdefault(domain, set()).update(slot_value_pairs.keys())
 
     return belief_state
 
@@ -366,19 +358,17 @@ def load_multiwoz_dataset(split: str,
 
 
 def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
-    result = '{'
+    result = ''
     for domain, slot_values in belief_state.items():
         logging.debug(f"domain: {domain}")
         slot_values_str = ', '.join(f"{slot}: {value}" for slot, value in slot_values.items() if value != "None")
         if slot_values_str:
-            result += f"{domain}: {'{'}{slot_values_str}{'}'}"
-
-    result += '}'
-    return result
+            result += f"{domain} - {slot_values_str}; "
+    return result.rstrip('; ')  # remove the last semicolon and space
 
 
 def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]], threshold: int = 5) -> str:
-    result = '{'
+    result = ''
     for domain, result_list in database_results.items():
         if result_list is None:
             continue
@@ -388,20 +378,23 @@ def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, 
             if len(result_list) > threshold:
                 result_list = random.sample(result_list, threshold)
 
-            result_list_str = '[' + ', '.join(
+            result_list_str = ', '.join(
                 '{' + ','.join(f"{slot}: {value}" for slot, value in dict_element.items()) + '}'
-                for dict_element in result_list) + ']'
+                for dict_element in result_list)
 
-        result += f"{domain}: {result_list_str}"
+        result += f"{domain} - {result_list_str}; "
 
     result += '}'
-    return result
+    return result.rstrip('; ')  # remove the last semicolon and space
 
 
 def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]]) -> str:
-    result = ', '.join(f"{domain} : {len(result_list)}" for domain, result_list in database_results.items()
-                       if result_list is not None)
-    return '{' + result + '}'
+    result = ''
+    for domain, result_list in database_results.items():
+        if result_list is not None:
+            result += f"{domain}: {len(result_list)}; "
+
+    return result.rstrip('; ')  # remove the last semicolon and space
 
 
 class MultiWOZDataset:
@@ -710,12 +703,6 @@ class MultiWOZBeliefUpdate:
 
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Domains: {self.domains}")
-
-        # Save all possible slots into a file to check if the slots are correct
-        all_possible_slots_path = Path(root_cache_path) / "all_possible_slots.json"
-        sorted_all_possible_slots = {domain: sorted(slots) for domain, slots in ALL_POSSIBLE_SLOTS.items()}
-        with open(all_possible_slots_path, 'w') as file:
-            json.dump(sorted_all_possible_slots, file, indent=4)
 
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)

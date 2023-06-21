@@ -9,12 +9,11 @@ TASK_DESCRIPTION_BELIEF_UPDATE = 'Update belief state'
 SPECIAL_TOKENS = [BELIEF, DATABASE, DATABASE_COUNTS, CONTEXT, USER]
 DOMAIN_NAMES = sorted({'hotel', 'restaurant', 'bus', 'train', 'attraction', 'hospital', 'taxi'})
 OUTPUT_DF_COLUMNS = ['text', 'actions', 'predicted', 'dialogue_acts', 'system_utterance', 'scores']
-# TODO: probably need to verify that these are all the slots
-DOMAIN_SLOTS = dict(bus=sorted({'departure', 'destination', 'leaveat', 'day'}),
-                    hotel=sorted({'pricerange', 'bookstay', 'bookday', 'area', 'stars','bookpeople', 'parking', 'type',
-                                  'name', 'internet'}),
-                    restaurant=sorted({'bookpeople', 'booktime', 'pricerange', 'name', 'area', 'bookday', 'food'}),
-                    train=sorted({'departure', 'bookpeople', 'destination', 'leaveat', 'day', 'arriveby'}),
-                    attraction=sorted({'type', 'area', 'name'}),
-                    hospital={'department'},
-                    taxi=sorted({'departure', 'destination', 'arriveby', 'leaveat'}))
+DOMAIN_SLOTS = dict(bus=sorted(["day", "departure", "destination", "leaveat"]),
+                    hotel=sorted(["area", "bookday", "bookpeople", "bookstay", "internet", "name", "parking",
+                                  "pricerange", "stars", "type"]),
+                    restaurant=sorted(["area", "bookday", "bookpeople", "booktime", "food", "name", "pricerange"]),
+                    train=sorted(["arriveby", "bookpeople", "day", "departure", "destination", "leaveat"]),
+                    attraction=sorted(["area", "name", "type"]),
+                    hospital=["department"],
+                    taxi=sorted(["arriveby", "departure", "destination", "leaveat"]))
