@@ -1,5 +1,6 @@
 from pathlib import Path
 import csv
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -52,13 +53,10 @@ def compute_belief_metrics(eval_predictions: EvalPrediction):
     return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
 
 
-def preprocess_logits_for_metrics(logits, labels):
+def preprocess_logits_for_metrics(logits: Tuple[torch.Tensor, torch.Tensor], labels: torch.Tensor):
     """
     The Original Trainer may have a memory leak.
     This is a workaround to avoid storing too many tensors that are not needed.
     """
-    print(f"logits.type: {type(logits)}, labels.type: {type(labels)}")
-    print(f"logits[0] type = {type(logits[0])}, logits[1] type = {type(logits[1])}")
-    print(f"labels.shape = {labels.shape}")
-    pred_ids = torch.argmax(logits, dim=-1)
+    pred_ids = torch.argmax(logits[0], dim=-1)
     return pred_ids, labels
