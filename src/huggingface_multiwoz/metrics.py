@@ -2,6 +2,7 @@ from pathlib import Path
 import csv
 
 import numpy as np
+import torch
 from transformers import TrainerCallback, TrainingArguments, TrainerState, TrainerControl, EvalPrediction
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 
@@ -37,7 +38,24 @@ def compute_actions_metrics(eval_predictions: EvalPrediction):
 
 
 def compute_belief_metrics(eval_predictions: EvalPrediction):
-    logits, references = eval_predictions.predictions, eval_predictions.label_ids
-    predictions = np.argmax(logits, axis=2)
+    """
+    Compute metrics for belief state update.
+    Args:
+        eval_predictions:
 
+    Returns:
+
+    """
+    # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
+    # is already done in the preprocess_logits_for_metrics.
+    predictions, references = eval_predictions.predictions, eval_predictions.label_ids
     return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
+
+
+def preprocess_logits_for_metrics(logits, labels):
+    """
+    The Original Trainer may have a memory leak.
+    This is a workaround to avoid storing too many tensors that are not needed.
+    """
+    pred_ids = torch.argmax(logits, dim=-1)
+    return pred_ids, labels

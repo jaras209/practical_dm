@@ -12,7 +12,7 @@ from transformers import (
 )
 import torch
 
-from metrics import MetricsCallback, compute_belief_metrics
+from metrics import MetricsCallback, compute_belief_metrics, preprocess_logits_for_metrics
 from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate
 from utils import highest_checkpoint
 
@@ -129,6 +129,7 @@ def train(dataset: MultiWOZBeliefUpdate,
                       train_dataset=dataset.dataset['train'],
                       eval_dataset=dataset.dataset['val'],
                       compute_metrics=compute_belief_metrics,
+                      preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                       callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience),
                                  MetricsCallback()])
 
