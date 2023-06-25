@@ -406,7 +406,7 @@ def str_to_belief_state(belief_state_str: str) -> Dict[str, Dict[str, str]]:
         except ValueError:
             # This occurs if domain_section or slot_value_pair could not be split correctly
             # You could print a warning or error message here, if desired
-            logging.warning(f"Could not parse domain section: {domain_section}")
+            logging.debug(f"Could not parse domain section: {domain_section}")
 
     return belief_state
 
