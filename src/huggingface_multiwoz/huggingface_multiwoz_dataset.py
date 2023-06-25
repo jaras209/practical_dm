@@ -2,6 +2,7 @@ import json
 import logging
 import pickle
 import random
+import re
 from abc import abstractmethod
 from pathlib import Path
 import datasets
@@ -372,6 +373,42 @@ def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
         if slot_values_str:
             result += f"{domain} - {slot_values_str}; "
     return result.rstrip('; ')  # remove the last semicolon and space
+
+
+def str_to_belief_state(belief_state_str: str) -> Dict[str, Dict[str, str]]:
+    # Initialize the belief state with all domain-slot pairs, but set all values to "None"
+    belief_state = {domain: {slot: "None" for slot in slots} for domain, slots in DOMAIN_SLOTS.items()}
+
+    # Split the belief state string into domain sections
+    domain_sections = re.split(r';\s*', belief_state_str.strip())
+    for domain_section in domain_sections:
+        try:
+            # Split the domain section into domain name and slots_values_str
+            domain_name, slots_values_str = domain_section.split(' - ')
+
+            # Ensure the domain name is recognized
+            if domain_name not in DOMAIN_NAMES:
+                continue  # or raise an error if you prefer
+
+            # Split slots_values_str into slot-value pairs
+            slot_value_pairs = re.split(r',\s*', slots_values_str.strip())
+            for slot_value_pair in slot_value_pairs:
+                # Split slot_value_pair into slot and value
+                slot, value = slot_value_pair.split(': ')
+
+                # Ensure the slot is recognized for this domain
+                if slot not in DOMAIN_SLOTS[domain_name]:
+                    continue  # or raise an error if you prefer
+
+                # Update the value in the belief state
+                belief_state[domain_name][slot] = value
+
+        except ValueError:
+            # This occurs if domain_section or slot_value_pair could not be split correctly
+            # You could print a warning or error message here, if desired
+            logging.warning(f"Could not parse domain section: {domain_section}")
+
+    return belief_state
 
 
 def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]], threshold: int = 5) -> str:

@@ -7,7 +7,9 @@ import torch
 from transformers import TrainerCallback, TrainingArguments, TrainerState, TrainerControl, EvalPrediction
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 
-from evaluate import load
+import evaluate
+
+from huggingface_multiwoz_dataset import str_to_belief_state
 
 
 class MetricsCallback(TrainerCallback):
@@ -48,22 +50,51 @@ def belief_compute_metrics_builder(tokenizer):
         Returns:
 
         """
+        rouge = evaluate.load('rouge')
         # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
         # is already done in the preprocess_logits_for_metrics.
         predictions, references = eval_predictions.predictions, eval_predictions.label_ids
         predictions[predictions == -100] = tokenizer.pad_token_id
         references[references == -100] = tokenizer.pad_token_id
 
-        # The number of sequences that match exactly
+        predictions_str = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        references_str = tokenizer.batch_decode(references, skip_special_tokens=True)
+
+        # Accuracy
         num_correct_sequences = sum(np.array_equal(p, r) for p, r in zip(predictions, references))
-
-        # The total number of sequences
         total_sequences = len(predictions)
-
-        # Sequence-level accuracy
         accuracy = num_correct_sequences / total_sequences
 
-        return {"accuracy": accuracy}
+        # Rouge
+        rouge_output = rouge.compute(predictions=predictions_str, references=references_str,
+                                     rouge_types=["rouge1", "rouge2", "rougeL", "rougeLsum"],
+                                     )
+        # Precision, recall, f1
+        #   Convert the string representations back into dictionary format
+        predictions_dict = str_to_belief_state(predictions_str)
+        references_dict = str_to_belief_state(references_str)
+
+        #   Convert the dictionaries into lists of domain-slot-value triples
+        predictions_triples = [(domain, slot, value) for domain, slots in predictions_dict.items() for slot, value in
+                               slots.items() if value != "None"]
+        references_triples = [(domain, slot, value) for domain, slots in references_dict.items() for slot, value in
+                              slots.items() if value != "None"]
+
+        #   Convert the triples into binary labels (1 for each triple that exists in the reference, 0 otherwise)
+        all_triples = list(set(predictions_triples + references_triples))
+        predictions_triples = set(predictions_triples)
+        references_triples = set(references_triples)
+        predictions_labels = [int(triple in predictions_triples) for triple in all_triples]
+        references_labels = [int(triple in references_triples) for triple in all_triples]
+
+        return {"accuracy": accuracy,
+                "precision": precision_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
+                "recall": recall_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
+                "f1_score": f1_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
+                "rouge1": rouge_output["rouge1"],
+                "rouge2": rouge_output["rouge2"],
+                "rougeL": rouge_output["rougeL"],
+                "rougeLsum": rouge_output["rougeLsum"]}
 
     return compute_belief_metrics
 
