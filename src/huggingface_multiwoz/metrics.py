@@ -53,16 +53,17 @@ def belief_compute_metrics_builder(tokenizer):
         predictions, references = eval_predictions.predictions, eval_predictions.label_ids
         predictions[predictions == -100] = tokenizer.pad_token_id
         references[references == -100] = tokenizer.pad_token_id
-        print(f"predictions_shape: {predictions.shape}")
-        print(f"references_shape: {references.shape}")
-        print(f"{predictions[0] = }")
-        print(f"{references[0] = }")
-        # Check whether all values in predictions and references are integers and whether they are >= 0. Print this.
-        print(f"{np.all(predictions.astype(int) == predictions) = }")
-        print(f"{np.all(references.astype(int) == references) = }")
-        print(f"{np.all(predictions >= 0) = }")
-        print(f"{np.all(references >= 0) = }")
-        return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
+
+        # The number of sequences that match exactly
+        num_correct_sequences = sum(np.array_equal(p, r) for p, r in zip(predictions, references))
+
+        # The total number of sequences
+        total_sequences = len(predictions)
+
+        # Sequence-level accuracy
+        accuracy = num_correct_sequences / total_sequences
+
+        return {"accuracy": accuracy}
 
     return compute_belief_metrics
 
