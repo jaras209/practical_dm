@@ -53,6 +53,13 @@ def belief_compute_metrics_builder(tokenizer):
         predictions, references = eval_predictions.predictions, eval_predictions.label_ids
         predictions[predictions == -100] = tokenizer.pad_token_id
         references[references == -100] = tokenizer.pad_token_id
+        print(f"predictions_shape: {predictions.shape}")
+        print(f"references_shape: {references.shape}")
+        print(f"{predictions[0] = }")
+        print(f"{references[0] = }")
+        # Print unique values in predictions and references
+        print(f"{np.unique(predictions) = }")
+        print(f"{np.unique(references) = }")
         return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
 
     return compute_belief_metrics
