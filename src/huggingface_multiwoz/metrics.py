@@ -70,22 +70,25 @@ def belief_compute_metrics_builder(tokenizer):
                                      rouge_types=["rouge1", "rouge2", "rougeL", "rougeLsum"],
                                      )
         # Precision, recall, f1
-        #   Convert the string representations back into dictionary format
-        predictions_dict = str_to_belief_state(predictions_str)
-        references_dict = str_to_belief_state(references_str)
+        predictions_labels = []
+        references_labels = []
+        for pred_str, ref_str in zip(predictions_str, references_str):
+            # Convert the string representations back into dictionary format
+            pred_dict = str_to_belief_state(pred_str)
+            ref_dict = str_to_belief_state(ref_str)
 
-        #   Convert the dictionaries into lists of domain-slot-value triples
-        predictions_triples = [(domain, slot, value) for domain, slots in predictions_dict.items() for slot, value in
-                               slots.items() if value != "None"]
-        references_triples = [(domain, slot, value) for domain, slots in references_dict.items() for slot, value in
-                              slots.items() if value != "None"]
+            # Convert the dictionaries into lists of domain-slot-value triples
+            pred_triples = [(domain, slot, value) for domain, slots in pred_dict.items() for slot, value in
+                            slots.items() if value != "None"]
+            ref_triples = [(domain, slot, value) for domain, slots in ref_dict.items() for slot, value in
+                           slots.items() if value != "None"]
 
-        #   Convert the triples into binary labels (1 for each triple that exists in the reference, 0 otherwise)
-        all_triples = list(set(predictions_triples + references_triples))
-        predictions_triples = set(predictions_triples)
-        references_triples = set(references_triples)
-        predictions_labels = [int(triple in predictions_triples) for triple in all_triples]
-        references_labels = [int(triple in references_triples) for triple in all_triples]
+            # Convert the triples into binary labels (1 for each triple that exists in the reference, 0 otherwise)
+            all_triples = list(set(pred_triples + ref_triples))
+            pred_triples = set(pred_triples)
+            ref_triples = set(ref_triples)
+            predictions_labels.extend([int(triple in pred_triples) for triple in all_triples])
+            references_labels.extend([int(triple in ref_triples) for triple in all_triples])
 
         return {"accuracy": accuracy,
                 "precision": precision_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
