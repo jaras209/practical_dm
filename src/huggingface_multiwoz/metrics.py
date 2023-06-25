@@ -63,4 +63,4 @@ def preprocess_logits_for_metrics(logits: Tuple[torch.Tensor, torch.Tensor], lab
     This is a workaround to avoid storing too many tensors that are not needed.
     """
     pred_ids = torch.argmax(logits[0], dim=-1)
-    return pred_ids, labels
+    return pred_ids

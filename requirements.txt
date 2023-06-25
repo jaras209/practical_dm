@@ -8,3 +8,4 @@ scikit-learn
 tqdm
 fuzzywuzzy
 accelerate
+python-Levenshtein
