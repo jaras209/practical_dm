@@ -57,9 +57,11 @@ def belief_compute_metrics_builder(tokenizer):
         print(f"references_shape: {references.shape}")
         print(f"{predictions[0] = }")
         print(f"{references[0] = }")
-        # Print unique values in predictions and references
-        print(f"{np.unique(predictions) = }")
-        print(f"{np.unique(references) = }")
+        # Check whether all values in predictions and references are integers and whether they are >= 0. Print this.
+        print(f"{np.all(predictions.astype(int) == predictions) = }")
+        print(f"{np.all(references.astype(int) == references) = }")
+        print(f"{np.all(predictions >= 0) = }")
+        print(f"{np.all(references >= 0) = }")
         return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
 
     return compute_belief_metrics
