@@ -38,19 +38,23 @@ def compute_actions_metrics(eval_predictions: EvalPrediction):
             }
 
 
-def compute_belief_metrics(eval_predictions: EvalPrediction):
-    """
-    Compute metrics for belief state update.
-    Args:
-        eval_predictions:
+def belief_compute_metrics_builder(tokenizer):
+    def compute_belief_metrics(eval_predictions: EvalPrediction):
+        """
+        Compute metrics for belief state update.
+        Args:
+            eval_predictions:
 
-    Returns:
+        Returns:
 
-    """
-    # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
-    # is already done in the preprocess_logits_for_metrics.
-    predictions, references = eval_predictions.predictions, eval_predictions.label_ids
-    return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
+        """
+        # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
+        # is already done in the preprocess_logits_for_metrics.
+        predictions, references = eval_predictions.predictions, eval_predictions.label_ids
+        predictions[predictions == -100] = tokenizer.pad_token_id
+        return {"accuracy": accuracy_score(y_true=references, y_pred=predictions)}
+
+    return compute_belief_metrics
 
 
 def preprocess_logits_for_metrics(logits: Tuple[torch.Tensor, torch.Tensor], labels: torch.Tensor):
