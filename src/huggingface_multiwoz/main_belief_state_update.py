@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from constants import SPECIAL_TOKENS
-from evaluating import evaluate
+from evaluate_belief_state_update import evaluate
 from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate
 from train_belief_state_update import train
 
@@ -40,14 +40,26 @@ def main(args):
                                    warmup_steps=args.warmup_steps,
                                    metric_for_best_model=args.metric_for_best_model)
         logging.info("Model training complete.")
+    else:
+        # Use the provided path for evaluation
+        trained_model_path = Path(args.model_root_path) / args.model_name_or_path
+
+    # Evaluate the model
+    logging.info("Evaluating the model...")
+    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, only_dataset="test")
+    logging.info("Model evaluation complete. Results saved to files.")
 
 
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name_or_path", type=str, default='google/flan-t5-base',
+    parser.add_argument("--model_name_or_path", type=str,
+                        # default='google/flan-t5-base',
+                        default='flan-t5-base-finetuned-2023-06-26-11-16-01',
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
-    parser.add_argument("--model_root_path", type=str, default="/home/safar/HCN/models/belief_state_update",
+    parser.add_argument("--model_root_path", type=str,
+                        # default="/home/safar/HCN/models/belief_state_update",
+                        default="../../models/belief_state_update",
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
                         help="True indicates that we should load a locally saved model. False means that a HuggingFace "
@@ -79,14 +91,14 @@ if __name__ == "__main__":
                         choices=['accuracy', 'f1_score', 'precision', 'recall', 'rogue1', 'rogue2', 'rogueL',
                                  'rougeLsum'])
     parser.add_argument("--data_path",
-                        default="/home/safar/HCN/data/huggingface_data",
-                        # default="../../data/huggingface_data",
+                        # default="/home/safar/HCN/data/huggingface_data",
+                        default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
     parser.add_argument("--domains", default=[], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
-    parser.set_defaults(train_model=True)
+    parser.set_defaults(train_model=False)
     args = parser.parse_args()
 
     # Run the main function with the parsed arguments

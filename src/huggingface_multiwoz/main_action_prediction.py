@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from constants import SPECIAL_TOKENS
-from evaluating import evaluate
+from evaluate_action_prediction import evaluate
 from huggingface_multiwoz_dataset import MultiWOZDatasetActions, belief_state_to_str
 from train_action_prediction import train
 

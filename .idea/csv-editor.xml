@@ -52,6 +52,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/models/belief_state_update/flan-t5-base-finetuned-2023-06-26-11-16-01/eval_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/classification_model_2/val_predictions.csv">
           <value>
             <Attribute>
