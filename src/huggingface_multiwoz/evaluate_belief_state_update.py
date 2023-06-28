@@ -102,8 +102,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         label_ids[label_ids == -100] = dataset.tokenizer.pad_token_id
 
         # Convert input and label ids to text
-        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)[:1000]
-        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)[:1000]
+        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
         # Compute predictions using the model pipeline
         predictions = classifier_pipeline(inputs_text, max_length=max_target_length)

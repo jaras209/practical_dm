@@ -46,8 +46,7 @@ def main(args):
 
     # Evaluate the model
     logging.info("Evaluating the model...")
-    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, only_dataset="test",
-             max_target_length=args.max_target_length)
+    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, max_target_length=args.max_target_length)
     logging.info("Model evaluation complete. Results saved to files.")
 
 
