@@ -71,6 +71,7 @@ def train(dataset: MultiWOZBeliefUpdate,
 
     # Create a directory for tensorboard logs
     tensorboard_logs_dir = Path(output_path) / 'tensorboard-logs'
+    tensorboard_logs_dir.mkdir(parents=True, exist_ok=True)
 
     if checkpoint:
         logging.info(f"Resuming training from checkpoint {checkpoint} using {model_name_or_path} as base model.")
