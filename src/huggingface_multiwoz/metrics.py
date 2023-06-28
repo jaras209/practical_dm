@@ -42,12 +42,13 @@ def compute_belief_state_metrics(references: List[BeliefState],
         y_true_domain = [domain in ref for ref in ref_domains]
         y_pred_domain = [domain in pred for pred in pred_domains]
 
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
-                                                                   average='binary')
+        precision, recall, f1, support = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
+                                                                         average='binary', zero_division=0)
         metrics[domain] = {
             'precision': precision,
             'recall': recall,
             'f1-score': f1,
+            'support': support,
         }
 
     global_y_true = []  # Accumulate all true values for global metrics
@@ -76,20 +77,23 @@ def compute_belief_state_metrics(references: List[BeliefState],
             global_y_true.extend(y_true)  # Add to global true values
             global_y_pred.extend(y_pred)  # Add to global predicted values
 
-            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro', zero_division=0)
+            precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred, average='micro',
+                                                                             zero_division=0)
             metrics[f'{domain}-{slot}'] = {
                 'precision': precision,
                 'recall': recall,
                 'f1-score': f1,
+                'support': support,
             }
 
     # Compute global metrics
-    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
-                                                               zero_division=0)
+    precision, recall, f1, support = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
+                                                                     zero_division=0)
     metrics['global'] = {
         'precision': precision,
         'recall': recall,
         'f1-score': f1,
+        'support': support,
     }
 
     return metrics

@@ -105,8 +105,6 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
             'input_text': inputs_text,
             'predicted_text': predictions_text,
             'reference_text': references_text,
-            'predicted_dict': predictions_dict,
-            'reference_dict': references_dict
         })
 
         # Compute metrics
