@@ -76,7 +76,7 @@ def compute_belief_state_metrics(references: List[BeliefState],
             global_y_true.extend(y_true)  # Add to global true values
             global_y_pred.extend(y_pred)  # Add to global predicted values
 
-            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro')
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro', zero_division=0)
             metrics[f'{domain}-{slot}'] = {
                 'precision': precision,
                 'recall': recall,
@@ -84,7 +84,8 @@ def compute_belief_state_metrics(references: List[BeliefState],
             }
 
     # Compute global metrics
-    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro')
+    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
+                                                               zero_division=0)
     metrics['global'] = {
         'precision': precision,
         'recall': recall,
@@ -136,11 +137,14 @@ def belief_compute_metrics_builder(tokenizer):
         references_dict = [str_to_belief_state(ref_str) for ref_str in references_str]
 
         metrics = compute_belief_state_metrics(references=references_dict, predictions=predictions_dict)
+        exact_match_ratio = compute_belief_state_exact_match_ratio(references=references_dict,
+                                                                   predictions=predictions_dict)
 
         return {
             "precision": metrics['global']['precision'],
             "recall": metrics['global']['recall'],
             "f1-score": metrics['global']['f1-score'],
+            "exact_match_ratio": exact_match_ratio,
         }
 
     return compute_metrics

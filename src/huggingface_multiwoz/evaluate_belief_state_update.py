@@ -13,7 +13,7 @@ from transformers import AutoModelForSequenceClassification, pipelines, Pipeline
 from transformers.pipelines.base import KeyDataset
 
 from database import MultiWOZDatabase
-from metrics import compute_belief_state_metrics
+from metrics import compute_belief_state_metrics, compute_belief_state_exact_match_ratio
 from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate, str_to_belief_state
 from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 
@@ -89,8 +89,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         label_ids[label_ids == -100] = dataset.tokenizer.pad_token_id
 
         # Convert input and label ids to text
-        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)
-        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)[:500]
+        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)[:500]
 
         # Compute predictions using the model pipeline
         predictions = classifier_pipeline(inputs_text, max_length=max_target_length)

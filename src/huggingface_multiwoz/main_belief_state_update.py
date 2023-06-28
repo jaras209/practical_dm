@@ -86,10 +86,10 @@ if __name__ == "__main__":
                         help="Strategy for model evaluation/logging and saving during training. "
                              "Could be either 'steps' or 'epoch'.",
                         choices=['steps', 'epoch'])
-    parser.add_argument("--metric_for_best_model", type=str, default='f1_score', help="Metric to monitor for early "
+    parser.add_argument("--metric_for_best_model", type=str, default='f1-score', help="Metric to monitor for early "
                                                                                       "stopping and saving the best "
                                                                                       "model.",
-                        choices=['f1-score', 'precision', 'recall'])
+                        choices=['f1-score', 'precision', 'recall', 'exact_match_ratio'])
     parser.add_argument("--data_path",
                         # default="/home/safar/HCN/data/huggingface_data",
                         default="../../data/huggingface_data",
