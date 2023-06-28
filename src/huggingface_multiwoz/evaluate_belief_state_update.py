@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
                  metrics: Dict[str, Dict[str, float]]) -> None:
     """
-    Save the prediction results and evaluation metrics to CSV files.
+    Save the prediction results and evaluation metrics to CSV and JSON files.
 
     Args:
         model_path (Path): The path to the directory where the model is stored.
@@ -34,13 +34,26 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     """
     # Save results to file.
     model_path.mkdir(exist_ok=True, parents=True)
+    results_df = results_df[['input_text', 'predicted_text', 'reference_text']]
+
+    # Save results to CSV
     results_df.to_csv(model_path / f'{dataset_name}_results.csv')
     logging.info(f"Results saved to {model_path / f'{dataset_name}_results.csv'}.")
 
+    # Save results to JSON
+    results_df.to_json(model_path / f'{dataset_name}_results.json', orient='records', lines=True)
+    logging.info(f"Results saved to {model_path / f'{dataset_name}_results.json'}.")
+
     # Convert metrics dictionary to DataFrame and save to file.
     metrics_df = pd.DataFrame(metrics).transpose()
+
+    # Save metrics to CSV
     metrics_df.to_csv(model_path / f'{dataset_name}_metrics.csv')
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
+
+    # Save metrics to JSON
+    metrics_df.to_json(model_path / f'{dataset_name}_metrics.json', orient='columns')
+    logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.json'}.")
 
 
 def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32):
@@ -89,8 +102,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         label_ids[label_ids == -100] = dataset.tokenizer.pad_token_id
 
         # Convert input and label ids to text
-        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)[:500]
-        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)[:500]
+        inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)[:1000]
+        references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)[:1000]
 
         # Compute predictions using the model pipeline
         predictions = classifier_pipeline(inputs_text, max_length=max_target_length)
