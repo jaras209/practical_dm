@@ -37,22 +37,22 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     results_df = results_df[['input_text', 'predicted_text', 'reference_text']]
 
     # Save results to CSV
-    results_df.to_csv(model_path / f'{dataset_name}_results.csv')
+    results_df.to_csv(model_path / f'{dataset_name}_results.csv', index=False)
     logging.info(f"Results saved to {model_path / f'{dataset_name}_results.csv'}.")
 
     # Save results to JSON
-    results_df.to_json(model_path / f'{dataset_name}_results.json', orient='records', lines=True)
+    results_df.to_json(model_path / f'{dataset_name}_results.json', orient='records')
     logging.info(f"Results saved to {model_path / f'{dataset_name}_results.json'}.")
 
     # Convert metrics dictionary to DataFrame and save to file.
     metrics_df = pd.DataFrame(metrics).transpose()
 
     # Save metrics to CSV
-    metrics_df.to_csv(model_path / f'{dataset_name}_metrics.csv')
+    metrics_df.to_csv(model_path / f'{dataset_name}_metrics.csv', index=False)
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
     # Save metrics to JSON
-    metrics_df.to_json(model_path / f'{dataset_name}_metrics.json', orient='columns')
+    metrics_df.to_json(model_path / f'{dataset_name}_metrics.json')
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.json'}.")
 
 
