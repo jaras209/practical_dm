@@ -17,48 +17,6 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="/data/huggingface_data/cache/attraction-bus-hospital-hotel-police-restaurant-taxi-train_only-single-domain_False/test_preprocessed_data_attraction-bus-hospital-hotel-police-restaurant-taxi-train.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value=":" />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/data/huggingface_data/cache/attraction-bus-hospital-hotel-police-restaurant-taxi-train_only-single-domain_False/train_preprocessed_data_attraction-bus-hospital-hotel-police-restaurant-taxi-train.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value=":" />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/data/huggingface_data/cache/attraction-bus-hospital-hotel-police-restaurant-taxi-train_only-single-domain_False/validation_preprocessed_data_attraction-bus-hospital-hotel-police-restaurant-taxi-train.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value=":" />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/data/huggingface_data/cache/restaurant_only-single-domain_False/test_preprocessed_data_restaurant.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value=":" />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/data/huggingface_data/cache/restaurant_only-single-domain_False/validation_preprocessed_data_restaurant.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value=":" />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/models/belief_state_update/flan-t5-base-finetuned-2023-06-26-11-16-01/eval_metrics.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
         <entry key="/models/classification_model_2/val_predictions.csv">
           <value>
             <Attribute>

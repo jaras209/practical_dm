@@ -19,6 +19,8 @@ from constants import *
 
 logging.basicConfig(level=logging.INFO)
 
+from data_types import BeliefState
+
 TRUNCATED_INPUTS = 0
 TRUNCATED_OUTPUTS = 0
 
@@ -55,13 +57,13 @@ def extract_act_type_slot_name_pairs(dialogue_acts,
 
 
 def get_database_results(database: MultiWOZDatabase,
-                         belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Optional[List[Dict[str, str]]]]:
+                         belief_state: BeliefState) -> Dict[str, Optional[List[Dict[str, str]]]]:
     """
     Get the database results for the current domain and belief state.
 
     Args:
         database (MultiWOZDatabase): The database instance used for querying.
-        belief_state (Dict[str, Dict[str, str]]): The current belief state.
+        belief_state (BeliefState): The current belief state.
 
     Returns:
         Dict[str, Optional[List[Dict[str, str]]]]:
@@ -78,17 +80,17 @@ def get_database_results(database: MultiWOZDatabase,
     return database_results
 
 
-def create_state_update(belief_state: Dict[str, Dict[str, str]],
-                        old_belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+def create_state_update(belief_state: BeliefState,
+                        old_belief_state: BeliefState) -> BeliefState:
     """
     Create a state update dictionary representing the difference between the current and old belief states.
 
     Args:
-        belief_state (Dict[str, Dict[str, str]]): The current belief state dictionary.
-        old_belief_state (Dict[str, Dict[str, str]]): The old belief state dictionary.
+        belief_state (BeliefState): The current belief state dictionary.
+        old_belief_state (BeliefState): The old belief state dictionary.
 
     Returns:
-        Dict[str, Dict[str, str]]: The state update dictionary with the same structure as the belief state,
+        BeliefState: The state update dictionary with the same structure as the belief state,
                                    containing the differences between the current and old belief states.
                                    If there's no update for a particular slot, its value will be 'None'.
     """
@@ -108,20 +110,20 @@ def create_state_update(belief_state: Dict[str, Dict[str, str]],
     return state_update
 
 
-def update_belief_state(belief_state: Dict[str, Dict[str, str]],
+def update_belief_state(belief_state: BeliefState,
                         frame: Dict[str, List],
-                        remove_domain: bool = True) -> Dict[str, Dict[str, str]]:
+                        remove_domain: bool = True) -> BeliefState:
     """
     Updates the belief state based on the given frame.
 
     Args:
-        belief_state (Dict[str, Dict[str, str]]): The current belief state.
+        belief_state (BeliefState): The current belief state.
         frame (Dict[str, List]): A dictionary containing the domains and states for the current user turn.
         remove_domain (bool, optional): Whether to remove the domain from the slots. Defaults to True.
 
 
     Returns:
-        Dict[str, Dict[str, str]]: The updated belief state.
+        BeliefState: The updated belief state.
     """
     # Extract the domains and states from the frame
     domains = frame['service']
@@ -364,7 +366,7 @@ def load_multiwoz_dataset(split: str,
     return df
 
 
-def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
+def belief_state_to_str(belief_state: BeliefState) -> str:
     result = ''
     for domain, slot_values in belief_state.items():
         if slot_values is None:
@@ -375,9 +377,9 @@ def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
     return result.rstrip('; ')  # remove the last semicolon and space
 
 
-def str_to_belief_state(belief_state_str: str) -> Dict[str, Dict[str, str]]:
-    # Initialize the belief state with all domain-slot pairs, but set all values to "None"
-    belief_state = {domain: {slot: "None" for slot in slots} for domain, slots in DOMAIN_SLOTS.items()}
+def str_to_belief_state(belief_state_str: str, include_none_values: bool = False) -> BeliefState:
+    # Initialize the belief state
+    belief_state = {}
 
     # Split the belief state string into domain sections
     domain_sections = re.split(r';\s*', belief_state_str.strip())
@@ -388,7 +390,7 @@ def str_to_belief_state(belief_state_str: str) -> Dict[str, Dict[str, str]]:
 
             # Ensure the domain name is recognized
             if domain_name not in DOMAIN_NAMES:
-                continue  # or raise an error if you prefer
+                continue
 
             # Split slots_values_str into slot-value pairs
             slot_value_pairs = re.split(r',\s*', slots_values_str.strip())
@@ -398,15 +400,24 @@ def str_to_belief_state(belief_state_str: str) -> Dict[str, Dict[str, str]]:
 
                 # Ensure the slot is recognized for this domain
                 if slot not in DOMAIN_SLOTS[domain_name]:
-                    continue  # or raise an error if you prefer
+                    continue
 
-                # Update the value in the belief state
-                belief_state[domain_name][slot] = value
+                # If we're not including "None" values and the value is "None", skip this slot
+                if not include_none_values and value.lower() == "none":
+                    continue
+
+                # Use setdefault to initialize the domain and slot in the belief state, and update the value
+                belief_state.setdefault(domain_name, {}).setdefault(slot, value)
 
         except ValueError:
             # This occurs if domain_section or slot_value_pair could not be split correctly
-            # You could print a warning or error message here, if desired
             logging.debug(f"Could not parse domain section: {domain_section}")
+
+    # If including "None" values, ensure that all domain-slot pairs exist in the belief state
+    if include_none_values:
+        for domain, slots in DOMAIN_SLOTS.items():
+            for slot in slots:
+                belief_state.setdefault(domain, {}).setdefault(slot, "None")
 
     return belief_state
 

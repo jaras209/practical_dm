@@ -1,15 +1,18 @@
+from collections import defaultdict
 from pathlib import Path
 import csv
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 import numpy as np
 import torch
 from transformers import TrainerCallback, TrainingArguments, TrainerState, TrainerControl, EvalPrediction
-from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
+from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score, precision_recall_fscore_support
 
 import evaluate
 
+from constants import DOMAIN_SLOTS
 from huggingface_multiwoz_dataset import str_to_belief_state
+from data_types import BeliefState
 
 
 class MetricsCallback(TrainerCallback):
@@ -27,6 +30,76 @@ class MetricsCallback(TrainerCallback):
                 csv_writer.writerow(row_dict)
 
 
+def compute_belief_state_metrics(references: List[BeliefState],
+                                 predictions: List[BeliefState]) -> Dict[str, Dict[str, float]]:
+    metrics = {}
+
+    # Compute domain level metrics
+    ref_domains = [set(ref.keys()) for ref in references]
+    pred_domains = [set(pred.keys()) for pred in predictions]
+
+    for domain in DOMAIN_SLOTS:
+        y_true_domain = [domain in ref for ref in ref_domains]
+        y_pred_domain = [domain in pred for pred in pred_domains]
+
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
+                                                                   average='binary')
+        metrics[domain] = {
+            'precision': precision,
+            'recall': recall,
+            'f1-score': f1,
+        }
+
+    global_y_true = []  # Accumulate all true values for global metrics
+    global_y_pred = []  # Accumulate all predicted values for global metrics
+
+    # Compute domain-slot-value level metrics
+    for domain, slots in DOMAIN_SLOTS.items():
+        for slot in slots:
+            y_true = []
+            y_pred = []
+            for ref, pred in zip(references, predictions):
+                ref_slot_value = ref.get(domain, {}).get(slot)
+                pred_slot_value = pred.get(domain, {}).get(slot)
+
+                if ref_slot_value is not None or pred_slot_value is not None:
+                    if ref_slot_value is None:
+                        # Handle case where slot is missing in reference but present in prediction
+                        ref_slot_value = "missing_slot"
+                    if pred_slot_value is None:
+                        # Handle case where slot is missing in prediction but present in reference
+                        pred_slot_value = "missing_slot"
+
+                    y_true.append(ref_slot_value)
+                    y_pred.append(pred_slot_value)
+
+            global_y_true.extend(y_true)  # Add to global true values
+            global_y_pred.extend(y_pred)  # Add to global predicted values
+
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro')
+            metrics[f'{domain}-{slot}'] = {
+                'precision': precision,
+                'recall': recall,
+                'f1-score': f1,
+            }
+
+    # Compute global metrics
+    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro')
+    metrics['global'] = {
+        'precision': precision,
+        'recall': recall,
+        'f1-score': f1,
+    }
+
+    return metrics
+
+
+def compute_belief_state_exact_match_ratio(references: List[BeliefState],
+                                           predictions: List[BeliefState]) -> float:
+    exact_match_ratio = sum(ref == pred for ref, pred in zip(references, predictions)) / len(references)
+    return exact_match_ratio
+
+
 def compute_actions_metrics(eval_predictions: EvalPrediction):
     logits, references = eval_predictions.predictions, eval_predictions.label_ids
     predictions = (logits >= 0).astype(np.float32)
@@ -41,7 +114,7 @@ def compute_actions_metrics(eval_predictions: EvalPrediction):
 
 
 def belief_compute_metrics_builder(tokenizer):
-    def compute_belief_metrics(eval_predictions: EvalPrediction):
+    def compute_metrics(eval_predictions: EvalPrediction):
         """
         Compute metrics for belief state update.
         Args:
@@ -50,56 +123,27 @@ def belief_compute_metrics_builder(tokenizer):
         Returns:
 
         """
-        rouge = evaluate.load('rouge')
         # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
         # is already done in the preprocess_logits_for_metrics.
-        predictions, references = eval_predictions.predictions, eval_predictions.label_ids
+        predictions, label_ids = eval_predictions.predictions, eval_predictions.label_ids
         predictions[predictions == -100] = tokenizer.pad_token_id
-        references[references == -100] = tokenizer.pad_token_id
+        label_ids[label_ids == -100] = tokenizer.pad_token_id
 
         predictions_str = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-        references_str = tokenizer.batch_decode(references, skip_special_tokens=True)
+        references_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-        # Accuracy
-        num_correct_sequences = sum(np.array_equal(p, r) for p, r in zip(predictions, references))
-        total_sequences = len(predictions)
-        accuracy = num_correct_sequences / total_sequences
+        predictions_dict = [str_to_belief_state(pred_str) for pred_str in predictions_str]
+        references_dict = [str_to_belief_state(ref_str) for ref_str in references_str]
 
-        # Rouge
-        rouge_output = rouge.compute(predictions=predictions_str, references=references_str,
-                                     rouge_types=["rouge1", "rouge2", "rougeL", "rougeLsum"],
-                                     )
-        # Precision, recall, f1
-        predictions_labels = []
-        references_labels = []
-        for pred_str, ref_str in zip(predictions_str, references_str):
-            # Convert the string representations back into dictionary format
-            pred_dict = str_to_belief_state(pred_str)
-            ref_dict = str_to_belief_state(ref_str)
+        metrics = compute_belief_state_metrics(references=references_dict, predictions=predictions_dict)
 
-            # Convert the dictionaries into lists of domain-slot-value triples
-            pred_triples = [(domain, slot, value) for domain, slots in pred_dict.items() for slot, value in
-                            slots.items() if value != "None"]
-            ref_triples = [(domain, slot, value) for domain, slots in ref_dict.items() for slot, value in
-                           slots.items() if value != "None"]
+        return {
+            "precision": metrics['global']['precision'],
+            "recall": metrics['global']['recall'],
+            "f1-score": metrics['global']['f1-score'],
+        }
 
-            # Convert the triples into binary labels (1 for each triple that exists in the reference, 0 otherwise)
-            all_triples = list(set(pred_triples + ref_triples))
-            pred_triples = set(pred_triples)
-            ref_triples = set(ref_triples)
-            predictions_labels.extend([int(triple in pred_triples) for triple in all_triples])
-            references_labels.extend([int(triple in ref_triples) for triple in all_triples])
-
-        return {"accuracy": accuracy,
-                "precision": precision_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
-                "recall": recall_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
-                "f1_score": f1_score(y_true=references_labels, y_pred=predictions_labels, zero_division=0),
-                "rouge1": rouge_output["rouge1"],
-                "rouge2": rouge_output["rouge2"],
-                "rougeL": rouge_output["rougeL"],
-                "rougeLsum": rouge_output["rougeLsum"]}
-
-    return compute_belief_metrics
+    return compute_metrics
 
 
 def preprocess_logits_for_metrics(logits: Tuple[torch.Tensor, torch.Tensor], labels: torch.Tensor):

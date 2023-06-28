@@ -46,7 +46,8 @@ def main(args):
 
     # Evaluate the model
     logging.info("Evaluating the model...")
-    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, only_dataset="test")
+    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, only_dataset="test",
+             max_target_length=args.max_target_length)
     logging.info("Model evaluation complete. Results saved to files.")
 
 
@@ -55,7 +56,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", type=str,
                         # default='google/flan-t5-base',
-                        default='flan-t5-base-finetuned-2023-06-26-11-16-01',
+                        default='flan-t5-base-finetuned-2023-06-27-10-23-50',
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path", type=str,
                         # default="/home/safar/HCN/models/belief_state_update",
@@ -66,15 +67,15 @@ if __name__ == "__main__":
                              "model is used for training.")
     parser.add_argument("--tokenizer_name", default='google/flan-t5-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
-    parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
-    parser.add_argument("--max_source_length", default=512, type=int, help="Max seq length of input to model")
-    parser.add_argument("--max_target_length", default=256, type=int, help="Max seq length of output to model")
+    parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
+    parser.add_argument("--max_source_length", default=260, type=int, help="Max seq length of input to model")
+    parser.add_argument("--max_target_length", default=230, type=int, help="Max seq length of output to model")
     parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
-    parser.add_argument("--learning_rate", default=3e-4, type=float, help="Learning rate.")
+    parser.add_argument("--learning_rate", default=1e-4, type=float, help="Learning rate.")
     parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
                                                                                 "training is ended if there is no "
                                                                                 "improvement on validation data")
-    parser.add_argument("--warmup_steps", type=int, default=100, help="Number of steps for the warmup phase. During "
+    parser.add_argument("--warmup_steps", type=int, default=1000, help="Number of steps for the warmup phase. During "
                                                                         "this phase, the learning rate gradually "
                                                                         "increases to the initial learning rate.")
     parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps after which the training "
@@ -88,8 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--metric_for_best_model", type=str, default='f1_score', help="Metric to monitor for early "
                                                                                       "stopping and saving the best "
                                                                                       "model.",
-                        choices=['accuracy', 'f1_score', 'precision', 'recall', 'rogue1', 'rogue2', 'rogueL',
-                                 'rougeLsum'])
+                        choices=['f1-score', 'precision', 'recall'])
     parser.add_argument("--data_path",
                         # default="/home/safar/HCN/data/huggingface_data",
                         default="../../data/huggingface_data",

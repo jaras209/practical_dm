@@ -191,7 +191,7 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
         metrics (Dict[str, Dict[str, float]]): The dictionary containing the evaluation metrics.
     """
     # Save predictions to file.
-    output_df = output_df[OUTPUT_DF_COLUMNS]
+    output_df = output_df[OUTPUT_DF_COLUMNS].transpose()
     model_path.mkdir(exist_ok=True, parents=True)
     output_df.to_csv(model_path / f'{dataset_name}_predictions.csv')
     logging.info(f"Predictions saved to {model_path / f'{dataset_name}_predictions.csv'}.")
