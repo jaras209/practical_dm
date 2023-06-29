@@ -122,8 +122,10 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         # Compute predictions using the model pipeline
         logging.info("Computing predictions...")
         predictions_text = []
-        for predictions in tqdm(classifier_pipeline(inputs_text, max_length=max_target_length, batch_size=batch_size),
+        for predictions in tqdm(classifier_pipeline(inputs_text, max_length=max_target_length, batch_size=1),
                                 desc=f"Computing predictions for {dataset_name}", total=len(inputs_text)):
+            for pred in predictions:
+                print(pred)
             predictions_text.extend([pred['generated_text'] for pred in predictions])
 
         # Convert the string representations back into dictionary format
