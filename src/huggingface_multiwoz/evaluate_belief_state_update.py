@@ -20,6 +20,8 @@ from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
 
+import json
+
 
 def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
                  metrics: Dict[str, Dict[str, float]]) -> None:
@@ -34,26 +36,34 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     """
     # Save results to file.
     model_path.mkdir(exist_ok=True, parents=True)
-    results_df = results_df[['input_text', 'predicted_text', 'reference_text']]
 
-    # Save results to CSV
-    results_df.to_csv(model_path / f'{dataset_name}_results.csv', index=False)
-    logging.info(f"Results saved to {model_path / f'{dataset_name}_results.csv'}.")
+    results_df = results_df[['input_text', 'predicted_text', 'reference_text', 'predicted_dict', 'reference_dict']]
 
-    # Save results to JSON
-    results_df.to_json(model_path / f'{dataset_name}_results.json', orient='records')
-    logging.info(f"Results saved to {model_path / f'{dataset_name}_results.json'}.")
+    # Replace NaN values with an empty string
+    results_df = results_df.replace(np.nan, '')
+
+    # Save full results
+    results_df.to_csv(model_path / f'{dataset_name}_results.csv', index=False, sep='\t')
+    with open(model_path / f'{dataset_name}_results.json', 'w') as f:
+        json.dump(results_df.to_dict(orient='records'), f, indent=4)
+
+    logging.info(f"Full results saved to {model_path / f'{dataset_name}_results.csv'} and "
+                 f"{model_path / f'{dataset_name}_results.json'}.")
+
+    # Save a subset of results
+    results_df_subset = results_df.head(min(1000, len(results_df)))
+    results_df_subset.to_csv(model_path / f'{dataset_name}_results_subset.csv', index=False, sep='\t')
+
+    with open(model_path / f'{dataset_name}_results_subset.json', 'w') as f:
+        json.dump(results_df_subset.to_dict(orient='records'), f, indent=4)
+
+    logging.info(f"Subset of results saved to {model_path / f'{dataset_name}_results_subset.csv'} and "
+                 f"{model_path / f'{dataset_name}_results_subset.json'}.")
 
     # Convert metrics dictionary to DataFrame and save to file.
     metrics_df = pd.DataFrame(metrics).transpose()
-
-    # Save metrics to CSV
-    metrics_df.to_csv(model_path / f'{dataset_name}_metrics.csv', index=False)
+    metrics_df.to_csv(model_path / f'{dataset_name}_metrics.csv', index=True, sep='\t')
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
-
-    # Save metrics to JSON
-    metrics_df.to_json(model_path / f'{dataset_name}_metrics.json')
-    logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.json'}.")
 
 
 def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32):
@@ -118,6 +128,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
             'input_text': inputs_text,
             'predicted_text': predictions_text,
             'reference_text': references_text,
+            'predicted_dict': predictions_dict,
+            'reference_dict': references_dict
         })
 
         # Compute metrics

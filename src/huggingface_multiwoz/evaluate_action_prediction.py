@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from pathlib import Path
@@ -193,8 +194,13 @@ def save_results(model_path: Path, dataset_name: str, output_df: pd.DataFrame,
     # Save predictions to file.
     output_df = output_df[OUTPUT_DF_COLUMNS].transpose()
     model_path.mkdir(exist_ok=True, parents=True)
-    output_df.to_csv(model_path / f'{dataset_name}_predictions.csv')
-    logging.info(f"Predictions saved to {model_path / f'{dataset_name}_predictions.csv'}.")
+
+    output_df.to_csv(model_path / f'{dataset_name}_results.csv', index=False, sep='\t')
+    with open(model_path / f'{dataset_name}_results.json', 'w') as f:
+        json.dump(output_df.to_dict(orient='records'), f, indent=4)
+
+    logging.info(f"Results saved to {model_path / f'{dataset_name}_results.csv'} and "
+                 f"{model_path / f'{dataset_name}_results.json'}.")
 
     # Convert metrics dictionary to DataFrame and save to file.
     metrics_df = pd.DataFrame([metrics['accuracy'], metrics['recall'], metrics['precision'], metrics['f1']])
