@@ -83,8 +83,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     logging.info(f"Evaluating model {model_path}...")
 
     # Load the trained model.
-    model = T5ForConditionalGeneration.from_pretrained(model_path)
-    device_map = infer_auto_device_map(model)
+    model = T5ForConditionalGeneration.from_pretrained(model_path).to(device)
 
     # Prepare model for evaluation.
     model.eval()
@@ -93,7 +92,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     classifier_pipeline = pipelines.pipeline(task='text2text-generation',
                                              model=model,
                                              tokenizer=dataset.tokenizer,
-                                             device_map=device_map)
+                                             device_map=device)
 
     logging.info(f"Pipeline created. Pipeline device: {classifier_pipeline.device}")
 
