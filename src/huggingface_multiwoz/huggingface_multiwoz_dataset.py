@@ -746,12 +746,14 @@ class MultiWOZBeliefUpdate:
         self.database = MultiWOZDatabase(database_path)
 
         # Load train/val/test datasets into DataFrames
+        """
         train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
                                          root_cache_path=root_cache_path, domains=domains,
                                          only_single_domain=self.only_single_domain, strip_domain=strip_domain)
         val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
                                        root_cache_path=root_cache_path, domains=domains,
                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        """
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
@@ -760,8 +762,8 @@ class MultiWOZBeliefUpdate:
         logging.info(f"Domains: {self.domains}")
 
         # Create HuggingFace datasets
-        train_dataset = self.create_huggingface_dataset(train_df)
-        val_dataset = self.create_huggingface_dataset(val_df)
+        # train_dataset = self.create_huggingface_dataset(train_df)
+        # val_dataset = self.create_huggingface_dataset(val_df)
         test_dataset = self.create_huggingface_dataset(test_df)
 
         # Log number of truncated input and output examples
@@ -769,9 +771,10 @@ class MultiWOZBeliefUpdate:
 
         # Create dataset dictionary
         self.dataset = datasets.DatasetDict({
-            'train': train_dataset,
+            # 'train': train_dataset,
             'test': test_dataset,
-            'val': val_dataset}
+            # 'val': val_dataset
+            }
         )
 
     def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
