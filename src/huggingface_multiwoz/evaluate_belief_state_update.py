@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 from numpy import ndarray
 from sklearn.metrics import recall_score, precision_score, f1_score, accuracy_score
+from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, pipelines, Pipeline, T5ForConditionalGeneration
 from transformers.pipelines.base import KeyDataset
 
@@ -66,7 +67,8 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32):
+def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32,
+             batch_size: int = 16) -> None:
     """
     Evaluate the model on the datasets in multiwoz_dataset.
 
@@ -82,7 +84,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     logging.info(f"Evaluating model {model_path}...")
 
     # Load the trained model.
-    model = T5ForConditionalGeneration.from_pretrained(model_path).to(device)
+    model = T5ForConditionalGeneration.from_pretrained(model_path)
 
     # Prepare model for evaluation.
     model.eval()
@@ -91,7 +93,9 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     classifier_pipeline = pipelines.pipeline(task='text2text-generation',
                                              model=model,
                                              tokenizer=dataset.tokenizer,
-                                             device=0 if torch.cuda.is_available() else -1)
+                                             device_map='auto')
+
+    logging.info(f"Pipeline created. Pipeline device: {classifier_pipeline.device}")
 
     start_time = time.time()
 
@@ -112,14 +116,19 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         label_ids[label_ids == -100] = dataset.tokenizer.pad_token_id
 
         # Convert input and label ids to text
+        logging.info("Converting input and label ids to text...")
         inputs_text = dataset.tokenizer.batch_decode(input_ids, skip_special_tokens=True)
         references_text = dataset.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
         # Compute predictions using the model pipeline
-        predictions = classifier_pipeline(inputs_text, max_length=max_target_length)
-        predictions_text = [pred['generated_text'] for pred in predictions]
+        logging.info("Computing predictions...")
+        predictions_text = []
+        for predictions in tqdm(classifier_pipeline(inputs_text, max_length=max_target_length, batch_size=batch_size),
+                                desc=f"Computing predictions for {dataset_name}", total=len(inputs_text)):
+            predictions_text.extend([pred['generated_text'] for pred in predictions])
 
         # Convert the string representations back into dictionary format
+        logging.info("Converting predictions and references to dictionary format...")
         predictions_dict = [str_to_belief_state(pred) for pred in predictions_text]
         references_dict = [str_to_belief_state(ref) for ref in references_text]
 
@@ -133,9 +142,11 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         })
 
         # Compute metrics
+        logging.info("Computing metrics...")
         metrics = compute_belief_state_metrics(references_dict, predictions_dict)
 
         # Save results
+        logging.info("Saving results...")
         save_results(model_path, dataset_name, output_df, metrics)
 
         logging.info(f"Evaluating model on {dataset_name} done in {time.time() - dataset_start_time:.2f} seconds.\n")
