@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
@@ -20,8 +21,6 @@ from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
-
-import json
 
 
 def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
@@ -84,7 +83,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     logging.info(f"Evaluating model {model_path}...")
 
     # Load the trained model.
-    model = T5ForConditionalGeneration.from_pretrained(model_path)
+    model = T5ForConditionalGeneration.from_pretrained(model_path).to(device)
 
     # Prepare model for evaluation.
     model.eval()
