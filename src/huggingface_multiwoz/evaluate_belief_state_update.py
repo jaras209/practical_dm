@@ -1,6 +1,5 @@
 import logging
 import time
-import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
@@ -10,7 +9,6 @@ import pandas as pd
 import torch
 from numpy import ndarray
 from sklearn.metrics import recall_score, precision_score, f1_score, accuracy_score
-from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, pipelines, Pipeline, T5ForConditionalGeneration
 from transformers.pipelines.base import KeyDataset
 
@@ -21,6 +19,8 @@ from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
+
+import json
 
 
 def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
@@ -83,7 +83,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     logging.info(f"Evaluating model {model_path}...")
 
     # Load the trained model.
-    model = T5ForConditionalGeneration.from_pretrained(model_path).to(device)
+    model = T5ForConditionalGeneration.from_pretrained(model_path)
 
     # Prepare model for evaluation.
     model.eval()
@@ -92,7 +92,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     classifier_pipeline = pipelines.pipeline(task='text2text-generation',
                                              model=model,
                                              tokenizer=dataset.tokenizer,
-                                             device=0 if device.type == 'cuda' else -1)
+                                             device_map='auto')
 
     logging.info(f"Pipeline created. Pipeline device: {classifier_pipeline.device}")
 
@@ -121,12 +121,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
 
         # Compute predictions using the model pipeline
         logging.info("Computing predictions...")
-        predictions_text = []
-        for predictions in tqdm(classifier_pipeline(inputs_text, max_length=max_target_length, batch_size=1),
-                                desc=f"Computing predictions for {dataset_name}", total=len(inputs_text)):
-            for pred in predictions:
-                print(pred)
-            predictions_text.extend([pred['generated_text'] for pred in predictions])
+        predictions = classifier_pipeline(inputs_text, max_length=max_target_length)
+        predictions_text = [pred['generated_text'] for pred in predictions]
 
         # Convert the string representations back into dictionary format
         logging.info("Converting predictions and references to dictionary format...")
