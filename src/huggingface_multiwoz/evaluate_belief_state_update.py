@@ -92,7 +92,7 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
     classifier_pipeline = pipelines.pipeline(task='text2text-generation',
                                              model=model,
                                              tokenizer=dataset.tokenizer,
-                                             device_map='auto')
+                                             device=0 if device.type == 'cuda' else -1)
 
     logging.info(f"Pipeline created. Pipeline device: {classifier_pipeline.device}")
 
@@ -107,8 +107,8 @@ def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str 
         logging.info(f"Evaluating model on {dataset_name}...")
 
         # Prepare the key dataset for the model pipeline and get the input text.
-        input_ids = np.array(dataset_data['input_ids'])
-        label_ids = np.array(dataset_data['labels'])
+        input_ids = torch.tensor(dataset_data['input_ids'])
+        label_ids = torch.tensor(dataset_data['labels'])
 
         # Assign pad_token_id back to those label ids with value -100, which is used for skipping loss calculation
         # on them
