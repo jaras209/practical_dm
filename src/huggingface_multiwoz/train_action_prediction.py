@@ -11,14 +11,14 @@ from transformers import (
 import torch
 
 from utils import highest_checkpoint
-from metrics import MetricsCallback, compute_actions_metrics
-from huggingface_multiwoz_dataset import MultiWOZDatasetActions
+from metrics import MetricsCallback, compute_actions_metrics_classification
+from huggingface_multiwoz_dataset import MultiWOZDatasetActionsClassification
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
 
 
-def train(dataset: MultiWOZDatasetActions,
+def train(dataset: MultiWOZDatasetActionsClassification,
           model_root_path: str,
           model_name_or_path: str,
           batch_size: int,
@@ -35,7 +35,7 @@ def train(dataset: MultiWOZDatasetActions,
     Train the model using the given arguments and dataset.
 
     Args:
-        dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
+        dataset (MultiWOZDatasetActionsClassification): The dataset object containing the dataset and tokenizer.
         model_root_path (str): The root directory for saving and loading the model.
         model_name_or_path (str): The name or the path of the pre-trained model in model_root_path or HuggingFace model.
         batch_size (int): Batch size for training and evaluation.
@@ -135,7 +135,7 @@ def train(dataset: MultiWOZDatasetActions,
                       args=training_args,
                       train_dataset=dataset.dataset['train'],
                       eval_dataset=dataset.dataset['val'],
-                      compute_metrics=compute_actions_metrics,
+                      compute_metrics=compute_actions_metrics_classification,
                       callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience),
                                  MetricsCallback()])
 

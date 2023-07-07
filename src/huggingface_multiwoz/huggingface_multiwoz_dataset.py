@@ -4,6 +4,7 @@ import pickle
 import random
 import re
 from abc import abstractmethod
+from collections import defaultdict
 from pathlib import Path
 import datasets
 import numpy as np
@@ -19,14 +20,12 @@ from constants import *
 
 logging.basicConfig(level=logging.INFO)
 
-from data_types import BeliefState
-
 TRUNCATED_INPUTS = 0
 TRUNCATED_OUTPUTS = 0
 
 
 def extract_act_type_slot_name_pairs(dialogue_acts,
-                                     strip_domain: bool = False) -> list[str]:
+                                     strip_domain: bool = False) -> Tuple[List[str], List[Dict]]:
     """
     Extract act_type-slot_name pairs from the dialogue acts in a system turn.
 
@@ -35,9 +34,13 @@ def extract_act_type_slot_name_pairs(dialogue_acts,
         strip_domain (bool, optional): If True, remove the domain names from the act types. Defaults to False.
 
     Returns:
-        list[str]: A list of act_type-slot_name pairs as strings.
+        act_type_slot_name_pairs (list[str]): A list of act_type-slot_name pairs as strings.
+        string_dialogue_acts (list[str]): A list of dialogue acts constructed from act_type_slot_name_pairs.
+
     """
     act_type_slot_name_pairs = []
+    dict_dialogue_acts = []
+
     act_types = dialogue_acts['dialog_act']['act_type']
     act_slots = dialogue_acts['dialog_act']['act_slots']
 
@@ -48,22 +51,25 @@ def extract_act_type_slot_name_pairs(dialogue_acts,
         slot_names = act_slot['slot_name']
         slot_values = act_slot['slot_value']
 
-        for slot_name in slot_names:
-            act_type_slot_name_pairs.append(
-                f'{act_type}{"-" if slot_name != "none" else ""}{slot_name if slot_name != "none" else ""}'
-            )
+        for slot_name, slot_value in zip(slot_names, slot_values):
+            if slot_name != 'none':
+                act_type_slot_name_pairs.append(f'{act_type}({slot_name})'.lower())
+                dict_dialogue_acts.append({act_type.lower(): {slot_name.lower(): slot_value}})
+            else:
+                act_type_slot_name_pairs.append(act_type.lower())
+                dict_dialogue_acts.append({act_type.lower(): None})
 
-    return act_type_slot_name_pairs
+    return act_type_slot_name_pairs, dict_dialogue_acts
 
 
 def get_database_results(database: MultiWOZDatabase,
-                         belief_state: BeliefState) -> Dict[str, Optional[List[Dict[str, str]]]]:
+                         belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Optional[List[Dict[str, str]]]]:
     """
     Get the database results for the current domain and belief state.
 
     Args:
         database (MultiWOZDatabase): The database instance used for querying.
-        belief_state (BeliefState): The current belief state.
+        belief_state (Dict[str, Dict[str, str]]): The current belief state.
 
     Returns:
         Dict[str, Optional[List[Dict[str, str]]]]:
@@ -80,17 +86,17 @@ def get_database_results(database: MultiWOZDatabase,
     return database_results
 
 
-def create_state_update(belief_state: BeliefState,
-                        old_belief_state: BeliefState) -> BeliefState:
+def create_state_update(belief_state: Dict[str, Dict[str, str]],
+                        old_belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
     """
     Create a state update dictionary representing the difference between the current and old belief states.
 
     Args:
-        belief_state (BeliefState): The current belief state dictionary.
-        old_belief_state (BeliefState): The old belief state dictionary.
+        belief_state (Dict[str, Dict[str, str]]): The current belief state dictionary.
+        old_belief_state (Dict[str, Dict[str, str]]): The old belief state dictionary.
 
     Returns:
-        BeliefState: The state update dictionary with the same structure as the belief state,
+        Dict[str, Dict[str, str]]: The state update dictionary with the same structure as the belief state,
                                    containing the differences between the current and old belief states.
                                    If there's no update for a particular slot, its value will be 'None'.
     """
@@ -110,20 +116,20 @@ def create_state_update(belief_state: BeliefState,
     return state_update
 
 
-def update_belief_state(belief_state: BeliefState,
+def update_belief_state(belief_state: Dict[str, Dict[str, str]],
                         frame: Dict[str, List],
-                        remove_domain: bool = True) -> BeliefState:
+                        remove_domain: bool = True) -> Dict[str, Dict[str, str]]:
     """
     Updates the belief state based on the given frame.
 
     Args:
-        belief_state (BeliefState): The current belief state.
+        belief_state (Dict[str, Dict[str, str]]): The current belief state.
         frame (Dict[str, List]): A dictionary containing the domains and states for the current user turn.
         remove_domain (bool, optional): Whether to remove the domain from the slots. Defaults to True.
 
 
     Returns:
-        BeliefState: The updated belief state.
+        Dict[str, Dict[str, str]]: The updated belief state.
     """
     # Extract the domains and states from the frame
     domains = frame['service']
@@ -134,6 +140,9 @@ def update_belief_state(belief_state: BeliefState,
         if domain not in belief_state:
             continue
 
+        active_intent = state['active_intent']
+        requested_slots = ' '.join(sorted(state['requested_slots']))
+
         # Extract the slot names and values from the state
         slots = state['slots_values']['slots_values_name']
         values = state['slots_values']['slots_values_list']
@@ -142,8 +151,10 @@ def update_belief_state(belief_state: BeliefState,
         slot_value_pairs = {slot.split('-')[-1] if remove_domain else slot: value[0] for slot, value in
                             zip(slots, values)}
 
-        # Update the belief state with the new slot-value pairs
+        # Update the belief state with the new slot-value pairs, active intent and requested slots
         belief_state[domain].update(slot_value_pairs)
+        belief_state[domain]['intent'] = active_intent
+        belief_state[domain]['requested'] = requested_slots if requested_slots else 'None'
 
     return belief_state
 
@@ -199,7 +210,8 @@ def save_data(data: list[[Dict]], file_path: Path, force: bool = False):
     df.to_csv(file_path.with_suffix('.csv'), index=False)
 
 
-def parse_dialogue_into_examples(dialogue: Dict[str, Any],
+def parse_dialogue_into_examples(dialogue_id: int,
+                                 dialogue: Dict[str, Any],
                                  dialogue_domain: str,
                                  database: MultiWOZDatabase,
                                  context_len: Optional[int] = None,
@@ -208,6 +220,7 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
     Parse a dialogue into training examples.
 
     Args:
+        dialogue_id (int): The dialogue ID.
         dialogue (Dict[str, Any]): The dialogue to be parsed.
         dialogue_domain (str): The dialogue domain (e.g., 'restaurant', 'hotel', etc.).
         database (MultiWOZDatabase): The database instance used for querying.
@@ -236,7 +249,9 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
             example = {
                 'utterance': utterance,
                 'old_belief_state': copy.deepcopy(belief_state),
-                'domain': dialogue_domain
+                'domain': dialogue_domain,
+                'dialogue_id': dialogue_id,
+                'user_turn_id': turn_id,
             }
 
             # Update the belief state based on the user's utterance
@@ -258,7 +273,8 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
             dialogue_acts = turns['dialogue_acts'][turn_id]
 
             # Extract action types and slot names from the dialogue acts
-            act_type_slot_name_pairs = extract_act_type_slot_name_pairs(dialogue_acts, strip_domain=strip_domain)
+            act_type_slot_name_pairs, string_dialogue_acts = extract_act_type_slot_name_pairs(dialogue_acts,
+                                                                                              strip_domain=strip_domain)
 
             context = turns['utterance'][:turn_id - 1]
             if context_len is not None and len(context) > context_len:
@@ -271,8 +287,10 @@ def parse_dialogue_into_examples(dialogue: Dict[str, Any],
             # Update the example dictionary with the new information
             example.update({
                 'context': context,
-                'actions': list(set(act_type_slot_name_pairs)),
+                'actions': sorted(list(set(act_type_slot_name_pairs))),
+                'dialogue_acts': string_dialogue_acts,
                 'system_utterance': utterance,
+                'system_turn_id': turn_id,
             })
             examples.append(example)
 
@@ -317,7 +335,8 @@ def load_multiwoz_dataset(split: str,
 
     # Create cache directory path from data path
     cache_path = Path(root_cache_path) / "cache"
-    cache_path = cache_path / ('-'.join(domains) + f"_only-single-domain_{only_single_domain}_context-len_{context_len}")
+    cache_path = cache_path / (
+                '-'.join(domains) + f"_only-single-domain_{only_single_domain}_context-len_{context_len}")
 
     # Create cache directory if it doesn't exist
     cache_path.mkdir(exist_ok=True, parents=True)
@@ -342,7 +361,8 @@ def load_multiwoz_dataset(split: str,
 
         data = []
         # Iterate through dialogues in the dataset, preprocessing each dialogue
-        for dialogue in tqdm(multi_woz_dataset, desc=f"Preprocessing {split} data", unit="dialogue", ncols=100):
+        for dialogue_id, dialogue in tqdm(enumerate(multi_woz_dataset), desc=f"Preprocessing {split} data",
+                                          unit="dialogue", ncols=100):
             if only_single_domain and len(dialogue['services']) != 1:
                 continue
 
@@ -355,8 +375,9 @@ def load_multiwoz_dataset(split: str,
             else:
                 dialogue_domain = ''
 
-            data.extend(parse_dialogue_into_examples(dialogue, dialogue_domain=dialogue_domain, database=database,
-                                                     context_len=context_len, strip_domain=strip_domain))
+            data.extend(
+                parse_dialogue_into_examples(dialogue_id, dialogue, dialogue_domain=dialogue_domain, database=database,
+                                             context_len=context_len, strip_domain=strip_domain))
 
         save_data(data, file_path)
 
@@ -366,18 +387,19 @@ def load_multiwoz_dataset(split: str,
     return df
 
 
-def belief_state_to_str(belief_state: BeliefState) -> str:
+def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
     result = ''
-    for domain, slot_values in belief_state.items():
+    for domain, slot_values in sorted(belief_state.items()):
         if slot_values is None:
             continue
-        slot_values_str = ', '.join(f"{slot}: {value}" for slot, value in slot_values.items() if value != "None")
+        slot_values_str = ', '.join(
+            f"{slot}: {value}" for slot, value in sorted(slot_values.items()) if value != "None")
         if slot_values_str:
             result += f"{domain} - {slot_values_str}; "
     return result.rstrip('; ')  # remove the last semicolon and space
 
 
-def str_to_belief_state(belief_state_str: str, include_none_values: bool = False) -> BeliefState:
+def str_to_belief_state(belief_state_str: str, include_none_values: bool = False) -> Dict[str, Dict[str, str]]:
     # Initialize the belief state
     belief_state = {}
 
@@ -445,11 +467,59 @@ def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, 
 
 def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]]) -> str:
     result = ''
-    for domain, result_list in database_results.items():
+    for domain, result_list in sorted(database_results.items()):
         if result_list is not None:
-            result += f"{domain}: {len(result_list)}; "
+            result += f"{domain} - {len(result_list)}; "
 
     return result.rstrip('; ')  # remove the last semicolon and space
+
+
+def action_list_to_str(action_list: List[str]) -> str:
+    # Create a dictionary to group actions by domain
+    domain_actions = defaultdict(list)
+
+    # Iterate over each action in the list
+    for action in action_list:
+        # Split the action into domain and slot (if applicable)
+        domain, actions = action.split('-')
+
+        # Append the formatted action to the domain's list
+        domain_actions[domain].append(f'{actions}')
+
+    # Generate the final string representation using dictionary and list comprehensions
+    string_repr = '; '.join(
+        f'{domain} - {", ".join(sorted(actions))}' for domain, actions in sorted(domain_actions.items()))
+    return string_repr
+
+
+def str_to_action_list(action_str: str) -> List[str]:
+    # Split the input string into individual domain-action strings
+    domain_action_strs = action_str.split(';')
+
+    # Initialize an empty list to hold the actions
+    action_list = []
+
+    # Iterate over each domain-action string
+    for domain_action_str in domain_action_strs:
+        # Split the domain-action string into domain and action string
+        domain, action_str = domain_action_str.split(' - ')
+
+        # Split the action string into individual actions
+        actions = action_str.split(', ')
+
+        # Iterate over each action
+        for action in actions:
+            # Format the action
+            formatted_action = f'{domain}-{action}'
+
+            # TODO: check this first but we need to have the set of UNIQUE ACTIONS in constants.py first.
+            #  Move the append to the if statement
+            # Check if the action is in the set of all possible actions
+            # if formatted_action in UNIQUE_ACTIONS:
+            #     If it is, add it to the list of actions
+            action_list.append(formatted_action)
+
+    return action_list
 
 
 class MultiWOZDataset:
@@ -504,7 +574,7 @@ class MultiWOZDataset:
         return train_df, val_df, test_df
 
 
-class MultiWOZDatasetActions:
+class MultiWOZDatasetActionsClassification:
     def __init__(self,
                  tokenizer_name: str,
                  context_len: int = 1,
@@ -699,7 +769,7 @@ class MultiWOZDatasetActions:
         return {label: i for i, label in enumerate(self.label_encoder.classes_)}
 
 
-class MultiWOZBeliefUpdate:
+class MultiWOZDatasetBeliefUpdate:
     def __init__(self,
                  tokenizer_name: str,
                  context_len: int = 1,
@@ -746,14 +816,12 @@ class MultiWOZBeliefUpdate:
         self.database = MultiWOZDatabase(database_path)
 
         # Load train/val/test datasets into DataFrames
-        """
         train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
                                          root_cache_path=root_cache_path, domains=domains,
                                          only_single_domain=self.only_single_domain, strip_domain=strip_domain)
         val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
                                        root_cache_path=root_cache_path, domains=domains,
                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
-        """
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
@@ -762,8 +830,8 @@ class MultiWOZBeliefUpdate:
         logging.info(f"Domains: {self.domains}")
 
         # Create HuggingFace datasets
-        # train_dataset = self.create_huggingface_dataset(train_df)
-        # val_dataset = self.create_huggingface_dataset(val_df)
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
         test_dataset = self.create_huggingface_dataset(test_df)
 
         # Log number of truncated input and output examples
@@ -771,10 +839,9 @@ class MultiWOZBeliefUpdate:
 
         # Create dataset dictionary
         self.dataset = datasets.DatasetDict({
-            # 'train': train_dataset,
+            'train': train_dataset,
             'test': test_dataset,
-            # 'val': val_dataset
-            }
+            'val': val_dataset}
         )
 
     def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
@@ -800,12 +867,12 @@ class MultiWOZBeliefUpdate:
         old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
-        separator = SEPARATOR_BELIEF_UPDATE
+        separator = CONTEXT_SEP
         contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter:
-                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + BELIEF_BELIEF_UPDATE + ' ' + belief + '. '
-                         + CONTEXT_BELIEF_UPDATE + ' ' + context + '. ' + USER_BELIEF_UPDATE + ' ' + user_utter,
+                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + BELIEF_GEN + ' ' + belief + '. '
+                         + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter,
                          old_belief_states, contexts, utterances))
 
         tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
@@ -824,6 +891,153 @@ class MultiWOZBeliefUpdate:
 
         # Check if any output texts were truncated
         truncated_texts = [text for text in new_belief_states if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_OUTPUTS += num_truncated
+
+        # Get labels
+        labels = tokenized_outputs['input_ids']
+
+        # Replace padding token id's of the labels by -100, so it's ignored by the loss
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        return {
+            'input_ids': tokenized_inputs['input_ids'],
+            'attention_mask': tokenized_inputs['attention_mask'],
+            'labels': labels,
+        }
+
+
+class MultiWOZDatasetActionGeneration:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_source_length: int = None,
+                 max_target_length: int = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_source_length (int, optional): The maximum sequence length for tokenized input.
+            max_target_length (int, optional): The maximum sequence length for the output.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
+        """
+        super().__init__()
+        self.tokenizer_name = tokenizer_name
+        self.max_source_length = max_source_length
+        self.max_target_length = max_target_length
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
+
+        # Initialize pretrained tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Create HuggingFace datasets
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
+        test_dataset = self.create_huggingface_dataset(test_df)
+
+        # Log number of truncated input and output examples
+        logging.info(f"Truncated inputs: {TRUNCATED_INPUTS}, truncated outputs: {TRUNCATED_OUTPUTS}")
+
+        # Create dataset dictionary
+        self.dataset = datasets.DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset,
+            'val': val_dataset}
+        )
+
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
+        """
+        Creates HuggingFace dataset from pandas DataFrame
+        :param df: input DataFrame
+        :return: output HuggingFace dataset
+        """
+        # Create HuggingFace dataset from Dataset
+        dataset = datasets.Dataset.from_pandas(df)
+
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
+
+        return dataset
+
+    def tokenize_and_cast_function(self, example_batch: Dict[str, Any]) -> Dict[
+        str, Union[List[str], List[int], np.ndarray]]:
+        global TRUNCATED_INPUTS, TRUNCATED_OUTPUTS
+
+        utterances = example_batch['utterance']
+
+        # Convert the belief states in the example batch into string format.
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+
+        # Convert action lists into a string format
+        actions = list(map(action_list_to_str, example_batch['action']))
+
+        # Convert the database_results in the example batch into string format with counts
+        database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
+
+        # Convert the contexts in the example batch into string format, with elements joined by the separator token.
+        separator = CONTEXT_SEP
+        contexts = list(map(lambda x: separator.join(x), example_batch['context']))
+
+        texts = list(map(lambda belief, context, user_utter, db_results_count:
+                         TASK_DESCRIPTION_ACTION_GENERATION + ' ' + BELIEF_GEN + ' ' + belief + '. '
+                         + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter + '. ' +
+                         DATABASE_COUNTS_GEN + ' ' + db_results_count,
+                         new_belief_states, contexts, utterances, database_results_count))
+
+        tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
+                                          max_length=self.max_source_length, return_tensors="pt")
+
+        tokenized_outputs = self.tokenizer(actions, padding='max_length', truncation=True,
+                                           max_length=self.max_target_length, return_tensors="pt")
+
+        # Check if any input texts were truncated
+        truncated_texts = [text for text in texts if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_INPUTS += num_truncated
+
+        # Check if any output texts were truncated
+        truncated_texts = [text for text in actions if
                            len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length]
         num_truncated = len(truncated_texts)
         if num_truncated > 0:

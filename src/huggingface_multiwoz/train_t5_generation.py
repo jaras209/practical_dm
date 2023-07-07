@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 from transformers import (
     T5ForConditionalGeneration,
@@ -12,15 +13,15 @@ from transformers import (
 )
 import torch
 
-from metrics import MetricsCallback, belief_compute_metrics_builder, preprocess_logits_for_metrics
-from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate
+from metrics import MetricsCallback, action_generation_metrics_builder, belief_update_metrics_builder, preprocess_logits_for_metrics
+from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration
 from utils import highest_checkpoint
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
 
 
-def train(dataset: MultiWOZBeliefUpdate,
+def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration],
           model_root_path: str,
           model_name_or_path: str,
           batch_size: int,
@@ -124,12 +125,16 @@ def train(dataset: MultiWOZBeliefUpdate,
     # Prepare model for training, i.e., this command does not train the model'
     model.train()
 
+    # Create the metrics for evaluation based on the dataset data type.
+    compute_metrics = belief_update_metrics_builder(dataset.tokenizer) if \
+        isinstance(dataset, MultiWOZDatasetBeliefUpdate) else action_generation_metrics_builder(dataset.tokenizer)
+
     # Create HuggingFace Trainer
     trainer = Trainer(model=model,
                       args=training_args,
                       train_dataset=dataset.dataset['train'],
                       eval_dataset=dataset.dataset['val'],
-                      compute_metrics=belief_compute_metrics_builder(dataset.tokenizer),
+                      compute_metrics=compute_metrics,
                       preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                       callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience),
                                  MetricsCallback()])

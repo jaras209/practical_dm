@@ -4,8 +4,8 @@ from pathlib import Path
 
 from constants import SPECIAL_TOKENS
 from evaluate_belief_state_update import evaluate
-from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate
-from train_belief_state_update import train
+from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate
+from train_t5_generation import train
 
 
 def main(args):
@@ -16,12 +16,12 @@ def main(args):
         args: A Namespace object containing the parsed command-line arguments.
     """
     # Load the dataset
-    belief_state_dataset = MultiWOZBeliefUpdate(tokenizer_name=args.tokenizer_name,
-                                                max_source_length=args.max_source_length,
-                                                max_target_length=args.max_target_length,
-                                                root_cache_path=args.data_path,
-                                                root_database_path=args.data_path,
-                                                domains=args.domains)
+    belief_state_dataset = MultiWOZDatasetBeliefUpdate(tokenizer_name=args.tokenizer_name,
+                                                       max_source_length=args.max_source_length,
+                                                       max_target_length=args.max_target_length,
+                                                       root_cache_path=args.data_path,
+                                                       root_database_path=args.data_path,
+                                                       domains=args.domains)
 
     if args.train_model:
         # Train the model

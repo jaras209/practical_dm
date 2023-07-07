@@ -7,12 +7,13 @@ import numpy as np
 import torch
 from transformers import TrainerCallback, TrainingArguments, TrainerState, TrainerControl, EvalPrediction
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score, precision_recall_fscore_support
+from sklearn.preprocessing import MultiLabelBinarizer
+
 
 import evaluate
 
 from constants import DOMAIN_SLOTS
-from huggingface_multiwoz_dataset import str_to_belief_state
-from data_types import BeliefState
+from huggingface_multiwoz_dataset import str_to_belief_state, str_to_action_list
 
 
 class MetricsCallback(TrainerCallback):
@@ -30,8 +31,8 @@ class MetricsCallback(TrainerCallback):
                 csv_writer.writerow(row_dict)
 
 
-def compute_belief_state_metrics(references: List[BeliefState],
-                                 predictions: List[BeliefState]) -> Dict[str, Dict[str, float]]:
+def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
+                                 predictions: List[Dict[str, Dict[str, str]]]) -> Dict[str, Dict[str, float]]:
     metrics = {}
 
     # Compute domain level metrics
@@ -99,13 +100,58 @@ def compute_belief_state_metrics(references: List[BeliefState],
     return metrics
 
 
-def compute_belief_state_exact_match_ratio(references: List[BeliefState],
-                                           predictions: List[BeliefState]) -> float:
+def compute_action_metrics(references: List[List[str]], predictions: List[List[str]]) -> dict:
+    # Create a MultiLabelBinarizer object
+    mlb = MultiLabelBinarizer()
+
+    # Fit and transform the MultiLabelBinarizer object with the references
+    binary_references = mlb.fit_transform(references)
+
+    # Transform the predictions with the same MultiLabelBinarizer object
+    binary_predictions = mlb.transform(predictions)
+
+    metrics = {}
+
+    # Compute per-class metrics
+    precision_per_class, recall_per_class, f1_per_class, support_per_class = \
+        precision_recall_fscore_support(y_true=binary_references, y_pred=binary_predictions, average=None, zero_division=0)
+
+    # Assign class metrics to action names
+    for action, precision, recall, f1, support in zip(mlb.classes_, precision_per_class, recall_per_class, f1_per_class, support_per_class):
+        metrics[action] = {
+            'precision': precision,
+            'recall': recall,
+            'f1-score': f1,
+            'support': support,
+        }
+
+    # Compute global metrics with all relevant averages
+    for average in ['micro', 'macro', 'weighted']:
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true=binary_references, y_pred=binary_predictions,
+                                                                   average=average, zero_division=0)
+        support = sum(support_per_class)
+        metrics[f'global_{average}'] = {
+            'precision': precision,
+            'recall': recall,
+            'f1-score': f1,
+            'support': support,
+        }
+
+    return metrics
+
+
+def compute_belief_state_exact_match_ratio(references: List[Dict[str, Dict[str, str]]],
+                                           predictions: List[Dict[str, Dict[str, str]]]) -> float:
     exact_match_ratio = sum(ref == pred for ref, pred in zip(references, predictions)) / len(references)
     return exact_match_ratio
 
 
-def compute_actions_metrics(eval_predictions: EvalPrediction):
+def compute_actions_exact_match_ratio(references: List[List[str]], predictions: List[List[str]]) -> float:
+    return sum(sorted(ref) == sorted(pred) for ref, pred in zip(references, predictions)) / len(references)
+
+
+
+def compute_actions_metrics_classification(eval_predictions: EvalPrediction):
     logits, references = eval_predictions.predictions, eval_predictions.label_ids
     predictions = (logits >= 0).astype(np.float32)
     return {"accuracy": accuracy_score(y_true=references, y_pred=predictions),
@@ -118,7 +164,49 @@ def compute_actions_metrics(eval_predictions: EvalPrediction):
             }
 
 
-def belief_compute_metrics_builder(tokenizer):
+def action_generation_metrics_builder(tokenizer):
+    def compute_metrics(eval_predictions: EvalPrediction):
+        """
+        Compute metrics for action generation.
+        Args:
+            eval_predictions:
+
+        Returns:
+
+        """
+        # Normally, eval_predictions.predictions are logits that need to be converted to predictions by argmax, but this
+        # is already done in the preprocess_logits_for_metrics.
+        predictions, label_ids = eval_predictions.predictions, eval_predictions.label_ids
+        predictions[predictions == -100] = tokenizer.pad_token_id
+        label_ids[label_ids == -100] = tokenizer.pad_token_id
+
+        predictions_str = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        references_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+
+        predictions_list = [str_to_action_list(pred_str) for pred_str in predictions_str]
+        references_list = [str_to_action_list(ref_str) for ref_str in references_str]
+
+        metrics = compute_action_metrics(references=references_list, predictions=predictions_list)
+        exact_match_ratio = compute_actions_exact_match_ratio(references=references_list,
+                                                              predictions=predictions_list)
+
+        return {
+            "precision_micro": metrics['global_micro']['precision'],
+            "recall_micro": metrics['global_micro']['recall'],
+            "f1-score_micro": metrics['global_micro']['f1-score'],
+            "precision_macro": metrics['global_macro']['precision'],
+            "recall_macro": metrics['global_macro']['recall'],
+            "f1-score_macro": metrics['global_macro']['f1-score'],
+            "precision_weighted": metrics['global_weighted']['precision'],
+            "recall_weighted": metrics['global_weighted']['recall'],
+            "f1-score_weighted": metrics['global_weighted']['f1-score'],
+            "exact_match_ratio": exact_match_ratio,
+        }
+
+    return compute_metrics
+
+
+def belief_update_metrics_builder(tokenizer):
     def compute_metrics(eval_predictions: EvalPrediction):
         """
         Compute metrics for belief state update.

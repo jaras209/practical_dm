@@ -15,7 +15,7 @@ from transformers.pipelines.base import KeyDataset
 
 from database import MultiWOZDatabase
 from metrics import compute_belief_state_metrics, compute_belief_state_exact_match_ratio
-from huggingface_multiwoz_dataset import MultiWOZBeliefUpdate, str_to_belief_state
+from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate, str_to_belief_state
 from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
 from accelerate import infer_auto_device_map
 
@@ -66,7 +66,7 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(dataset: MultiWOZBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32,
+def evaluate(dataset: MultiWOZDatasetBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32,
              batch_size: int = 8) -> None:
     """
     Evaluate the model on the datasets in multiwoz_dataset.
