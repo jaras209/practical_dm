@@ -501,23 +501,27 @@ def str_to_action_list(action_str: str) -> List[str]:
 
     # Iterate over each domain-action string
     for domain_action_str in domain_action_strs:
-        # Split the domain-action string into domain and action string
-        domain, action_str = domain_action_str.split(' - ')
+        try:
+            # Split the domain-action string into domain and action string
+            domain, action_str = domain_action_str.split(' - ')
 
-        # Split the action string into individual actions
-        actions = action_str.split(', ')
+            # Split the action string into individual actions
+            actions = action_str.split(', ')
 
-        # Iterate over each action
-        for action in actions:
-            # Format the action
-            formatted_action = f'{domain}-{action}'
+            # Iterate over each action
+            for action in actions:
+                # Format the action
+                formatted_action = f'{domain}-{action}'
 
-            # TODO: check this first but we need to have the set of UNIQUE ACTIONS in constants.py first.
-            #  Move the append to the if statement
-            # Check if the action is in the set of all possible actions
-            # if formatted_action in UNIQUE_ACTIONS:
-            #     If it is, add it to the list of actions
-            action_list.append(formatted_action)
+                # TODO: check this first but we need to have the set of UNIQUE ACTIONS in constants.py first.
+                #  Move the append to the if statement
+                # Check if the action is in the set of all possible actions
+                # if formatted_action in UNIQUE_ACTIONS:
+                #     If it is, add it to the list of actions
+                action_list.append(formatted_action)
+        except ValueError:
+            # This occurs if domain_action_str could not be split correctly
+            logging.debug(f"Could not parse domain-action string: {domain_action_str} in input string {action_str}")
 
     return action_list
 
@@ -1007,7 +1011,7 @@ class MultiWOZDatasetActionGeneration:
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
         # Convert action lists into a string format
-        actions = list(map(action_list_to_str, example_batch['action']))
+        actions = list(map(action_list_to_str, example_batch['actions']))
 
         # Convert the database_results in the example batch into string format with counts
         database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
