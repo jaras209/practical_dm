@@ -9,7 +9,6 @@ from transformers import TrainerCallback, TrainingArguments, TrainerState, Train
 from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score, precision_recall_fscore_support
 from sklearn.preprocessing import MultiLabelBinarizer
 
-
 import evaluate
 
 from constants import DOMAIN_SLOTS
@@ -114,10 +113,12 @@ def compute_action_metrics(references: List[List[str]], predictions: List[List[s
 
     # Compute per-class metrics
     precision_per_class, recall_per_class, f1_per_class, support_per_class = \
-        precision_recall_fscore_support(y_true=binary_references, y_pred=binary_predictions, average=None, zero_division=0)
+        precision_recall_fscore_support(y_true=binary_references, y_pred=binary_predictions, average=None,
+                                        zero_division=0)
 
     # Assign class metrics to action names
-    for action, precision, recall, f1, support in zip(mlb.classes_, precision_per_class, recall_per_class, f1_per_class, support_per_class):
+    for action, precision, recall, f1, support in zip(mlb.classes_, precision_per_class, recall_per_class, f1_per_class,
+                                                      support_per_class):
         metrics[action] = {
             'precision': precision,
             'recall': recall,
@@ -148,7 +149,6 @@ def compute_belief_state_exact_match_ratio(references: List[Dict[str, Dict[str, 
 
 def compute_actions_exact_match_ratio(references: List[List[str]], predictions: List[List[str]]) -> float:
     return sum(sorted(ref) == sorted(pred) for ref, pred in zip(references, predictions)) / len(references)
-
 
 
 def compute_actions_metrics_classification(eval_predictions: EvalPrediction):

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from huggingface_multiwoz_dataset import MultiWOZDatasetActionGeneration
 from train_t5_generation import train
+from evaluate_action_generation import evaluate
 
 
 def main(args):
@@ -41,12 +42,11 @@ def main(args):
     else:
         # Use the provided path for evaluation
         trained_model_path = Path(args.model_root_path) / args.model_name_or_path
-    """
+
     # Evaluate the model
     logging.info("Evaluating the model...")
-    evaluate(dataset=belief_state_dataset, model_path=trained_model_path, max_target_length=args.max_target_length)
+    evaluate(dataset=dataset, model_path=trained_model_path, max_target_length=args.max_target_length)
     logging.info("Model evaluation complete. Results saved to files.")
-    """
 
 
 if __name__ == "__main__":

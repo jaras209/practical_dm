@@ -1058,4 +1058,5 @@ class MultiWOZDatasetActionGeneration:
             'input_ids': tokenized_inputs['input_ids'],
             'attention_mask': tokenized_inputs['attention_mask'],
             'labels': labels,
+            'new_belief_state': new_belief_states,
         }
