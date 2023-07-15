@@ -41,9 +41,11 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
     for domain in DOMAIN_SLOTS:
         y_true_domain = [domain in ref for ref in ref_domains]
         y_pred_domain = [domain in pred for pred in pred_domains]
+        support = sum(y_true_domain)
 
-        precision, recall, f1, support = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
-                                                                         average='binary', zero_division=0)
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
+                                                                   average='binary', zero_division=0)
+
         metrics[domain] = {
             'precision': precision,
             'recall': recall,
