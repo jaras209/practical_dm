@@ -875,7 +875,7 @@ class MultiWOZDatasetBeliefUpdate:
         contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter:
-                         TASK_DESCRIPTION_BELIEF_UPDATE + ' ' + BELIEF_GEN + ' ' + belief + '. '
+                         TASK_DESCRIPTION_STATE_UPDATE + ' ' + STATE_GEN + ' ' + belief + '. '
                          + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter,
                          old_belief_states, contexts, utterances))
 
@@ -1021,7 +1021,7 @@ class MultiWOZDatasetActionGeneration:
         contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
         texts = list(map(lambda belief, context, user_utter, db_results_count:
-                         TASK_DESCRIPTION_ACTION_GENERATION + ' ' + BELIEF_GEN + ' ' + belief + '. '
+                         TASK_DESCRIPTION_ACTION_GENERATION + ' ' + STATE_GEN + ' ' + belief + '. '
                          + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter + '. ' +
                          DATABASE_COUNTS_GEN + ' ' + db_results_count,
                          new_belief_states, contexts, utterances, database_results_count))

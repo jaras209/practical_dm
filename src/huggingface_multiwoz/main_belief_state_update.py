@@ -54,12 +54,12 @@ if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", type=str,
-                        # default='google/flan-t5-base',
-                        default='flan-t5-base-finetuned-2023-06-27-10-23-50',
+                        default='google/flan-t5-base',
+                        # default='flan-t5-base-finetuned-2023-06-27-10-23-50',
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path", type=str,
-                        # default="/home/safar/HCN/models/belief_state_update",
-                        default="../../models/belief_state_update",
+                        default="/home/safar/HCN/models/belief_state_update",
+                        # default="../../models/belief_state_update",
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
                         help="True indicates that we should load a locally saved model. False means that a HuggingFace "
@@ -69,9 +69,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
     parser.add_argument("--max_source_length", default=260, type=int, help="Max seq length of input to model")
     parser.add_argument("--max_target_length", default=230, type=int, help="Max seq length of output to model")
-    parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
+    parser.add_argument("--epochs", default=50, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="Learning rate.")
-    parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
+    parser.add_argument("--early_stopping_patience", default=15, type=int, help="Number of epochs after which the "
                                                                                 "training is ended if there is no "
                                                                                 "improvement on validation data")
     parser.add_argument("--warmup_steps", type=int, default=1000, help="Number of steps for the warmup phase. During "
@@ -90,14 +90,14 @@ if __name__ == "__main__":
                                                                                       "model.",
                         choices=['f1-score', 'precision', 'recall', 'exact_match_ratio'])
     parser.add_argument("--data_path",
-                        # default="/home/safar/HCN/data/huggingface_data",
-                        default="../../data/huggingface_data",
+                        default="/home/safar/HCN/data/huggingface_data",
+                        # default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
     parser.add_argument("--domains", default=[], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
-    parser.set_defaults(train_model=False)
+    parser.set_defaults(train_model=True)
     args = parser.parse_args()
 
     # Run the main function with the parsed arguments
