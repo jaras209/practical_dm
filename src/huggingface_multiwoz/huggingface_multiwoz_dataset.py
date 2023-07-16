@@ -648,6 +648,7 @@ class MultiWOZDatasetActionsClassification:
         #   Create a DataFrame from the action_counts dictionary
         actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
         actions_df['supported'] = actions_df['support'] >= self.min_action_support
+        actions_df = actions_df.sort_values(by='support', ascending=False)
 
         #   Specify the file path and save the DataFrame as CSV
         actions_path = Path(root_cache_path) / "action_supports.csv"
