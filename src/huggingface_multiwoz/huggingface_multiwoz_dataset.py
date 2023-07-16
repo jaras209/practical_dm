@@ -1,3 +1,4 @@
+import collections
 import json
 import logging
 import pickle
@@ -589,7 +590,8 @@ class MultiWOZDatasetActionsClassification:
                  domains: List[str] = None,
                  only_single_domain: bool = False,
                  batch_size: int = 32,
-                 strip_domain: bool = False):
+                 strip_domain: bool = False,
+                 min_action_support: int = 5):
         """
         Initialize the MultiWOZDataset class.
 
@@ -604,6 +606,7 @@ class MultiWOZDatasetActionsClassification:
             only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
             batch_size (int, optional): The batch size to use when processing the dataset.
             strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+            min_action_support (int, optional): Set the minimum action support size to consider that action in train data
 
         """
         super().__init__()
@@ -613,6 +616,7 @@ class MultiWOZDatasetActionsClassification:
         self.domains = domains
         self.only_single_domain = only_single_domain
         self.batch_size = batch_size
+        self.min_action_support = min_action_support  # set min action support
 
         # Initialize pretrained tokenizer and register all the special tokens
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True,
@@ -637,22 +641,24 @@ class MultiWOZDatasetActionsClassification:
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
         logging.info(f"Domains: {self.domains}")
 
-        # Gather unique labels which are used in 'label' <-> 'integers' map
-        unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
+        # Create actions, count their support and filter the actions that have low support.
+        #   Count the occurrence of each action
+        action_counts = collections.Counter([action for example in train_df['actions'].to_list() for action in example])
 
-        # Specify the file path where you want to save the actions
-        actions_path = Path(root_cache_path) / "unique_actions.txt"
+        #   Create a DataFrame from the action_counts dictionary
+        actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
+        actions_df['supported'] = actions_df['support'] >= self.min_action_support
 
-        # Open the file in write mode
-        with actions_path.open("w") as file:
-            # Iterate over the elements of the unique_actions list
-            for action in unique_actions:
-                # Write each action to the file followed by a new line character
-                file.write(action + "\n")
+        #   Specify the file path and save the DataFrame as CSV
+        actions_path = Path(root_cache_path) / "action_supports.csv"
+        actions_df.to_csv(actions_path, index=False)
 
-        # Initialize LabelEncoder and fit it with the unique labels
+        #   Filter out actions with support less than the threshold
+        supported_actions = actions_df[actions_df['supported']]['action'].tolist()
+
+        # Initialize LabelEncoder and fit it with the supported actions
         self.label_encoder = LabelEncoder()
-        self.label_encoder.fit([UNK_ACTION] + unique_actions)
+        self.label_encoder.fit([UNK_ACTION] + supported_actions)
 
         # Get the number of unique labels
         self.num_labels = len(self.label_encoder.classes_)
@@ -735,7 +741,7 @@ class MultiWOZDatasetActionsClassification:
         labels = np.zeros((len(example_batch['actions']), self.num_labels))
         for idx, action_list in enumerate(example_batch['actions']):
             # Convert the action labels into their corresponding indices.
-            action_ids = self.map_labels_to_ids(action_list)
+            action_ids = self.map_labels_to_ids(action_list, filter_unseen=True)
             # For each action label, set the corresponding cell in the binary array to 1.
             labels[idx, action_ids] = 1.
 
@@ -745,12 +751,13 @@ class MultiWOZDatasetActionsClassification:
 
         return tokenized
 
-    def map_labels_to_ids(self, actions: List[str]) -> List[int]:
+    def map_labels_to_ids(self, actions: List[str], filter_unseen: bool = False) -> List[int]:
         """
         Maps action labels to their corresponding integer IDs.
 
         Args:
             actions (List[str]): A list of action labels.
+            filter_unseen (bool): If True, unseen actions are filtered out. If False, unseen actions are replaced with UNK_ACTION.
 
         Returns:
             List[int]: A list of integer IDs corresponding to the input action labels.
@@ -758,8 +765,12 @@ class MultiWOZDatasetActionsClassification:
         actions_set = set(actions)
         unseen_actions = actions_set.difference(self.label_encoder.classes_)
 
-        # Map unseen actions to UNK_ACTION
-        actions = [UNK_ACTION if action in unseen_actions else action for action in actions]
+        if filter_unseen:
+            # Filter out unseen actions
+            actions = [action for action in actions if action not in unseen_actions]
+        else:
+            # Replace unseen actions with UNK_ACTION
+            actions = [UNK_ACTION if action in unseen_actions else action for action in actions]
 
         # Now we know that all actions are in classes_, so we can call transform safely
         action_ids = self.label_encoder.transform(actions)

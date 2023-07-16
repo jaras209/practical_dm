@@ -55,12 +55,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path",
                         # default='roberta-base-finetuned-2023-06-08-17-45-19',
-                        # default='roberta-base',
-                        default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
+                        default='roberta-base',
+                        # default='hf_multiwoz_restaurant/roberta-base-finetuned-2023-06-08-17-45-19_without_database_elements',
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        default="/home/safar/HCN/models/hf_multiwoz_restaurant",
+                        default="/home/safarjar/HCN/models/action_classification",
                         # default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
@@ -69,14 +69,14 @@ if __name__ == "__main__":
                              "model is used for training. ")
     parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
-    parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
+    parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
-    parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
+    parser.add_argument("--epochs", default=50, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
-    parser.add_argument("--early_stopping_patience", default=5, type=int, help="Number of epochs after which the "
+    parser.add_argument("--early_stopping_patience", default=15, type=int, help="Number of epochs after which the "
                                                                                "training is ended if there is no "
                                                                                "improvement on validation data")
-    parser.add_argument("--warmup_steps", type=int, default=100, help="Number of steps for the warmup phase. During "
+    parser.add_argument("--warmup_steps", type=int, default=1000, help="Number of steps for the warmup phase. During "
                                                                       "this phase, the learning rate gradually "
                                                                       "increases to the initial learning rate.")
     parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps after which the training "
@@ -93,7 +93,7 @@ if __name__ == "__main__":
                         choices=['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'precision_weighted',
                                  'recall_macro', 'recall_weighted'])
     parser.add_argument("--data_path",
-                        default="/home/safar/HCN/data/huggingface_data",
+                        default="/home/safarjar/HCN/data/huggingface_data",
                         # default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")

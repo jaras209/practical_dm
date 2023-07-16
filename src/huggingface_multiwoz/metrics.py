@@ -79,8 +79,9 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
             global_y_true.extend(y_true)  # Add to global true values
             global_y_pred.extend(y_pred)  # Add to global predicted values
 
-            precision, recall, f1, support = precision_recall_fscore_support(y_true, y_pred, average='micro',
-                                                                             zero_division=0)
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro',
+                                                                       zero_division=0)
+            support = len([y for y in y_true if y != "missing_slot"])
             metrics[f'{domain}-{slot}'] = {
                 'precision': precision,
                 'recall': recall,
@@ -89,8 +90,9 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
             }
 
     # Compute global metrics
-    precision, recall, f1, support = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
-                                                                     zero_division=0)
+    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
+                                                               zero_division=0)
+    support = len([y for y in global_y_true if y != "missing_slot"])
     metrics['global'] = {
         'precision': precision,
         'recall': recall,
