@@ -937,7 +937,8 @@ class MultiWOZDatasetActionGeneration:
                  domains: List[str] = None,
                  only_single_domain: bool = False,
                  batch_size: int = 32,
-                 strip_domain: bool = False):
+                 strip_domain: bool = False,
+                 min_action_support: int = 10):
         """
         Initialize the MultiWOZDataset class.
 
@@ -962,6 +963,7 @@ class MultiWOZDatasetActionGeneration:
         self.domains = domains
         self.only_single_domain = only_single_domain
         self.batch_size = batch_size
+        self.min_action_support = min_action_support
 
         # Initialize pretrained tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
@@ -983,6 +985,22 @@ class MultiWOZDatasetActionGeneration:
 
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Domains: {self.domains}")
+
+        # Create actions, count their support and filter the actions that have low support.
+        #   Count the occurrence of each action
+        action_counts = collections.Counter([action for example in train_df['actions'].to_list() for action in example])
+
+        #   Create a DataFrame from the action_counts dictionary
+        actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
+        actions_df['supported'] = actions_df['support'] >= self.min_action_support
+        actions_df = actions_df.sort_values(by='support', ascending=False)
+
+        #   Specify the file path and save the DataFrame as CSV
+        actions_path = Path(root_cache_path) / "action_supports.csv"
+        actions_df.to_csv(actions_path, index=False)
+
+        #   Filter out actions with support less than the threshold
+        self.supported_actions = set(actions_df[actions_df['supported']]['action'].tolist())
 
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)
@@ -1022,8 +1040,11 @@ class MultiWOZDatasetActionGeneration:
         # Convert the belief states in the example batch into string format.
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
+        # Filter only those actions that are supported
+        filtered_actions = [action for action in example_batch['actions'] if action in self.supported_actions]
+
         # Convert action lists into a string format
-        actions = list(map(action_list_to_str, example_batch['actions']))
+        actions = list(map(action_list_to_str, filtered_actions))
 
         # Convert the database_results in the example batch into string format with counts
         database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
