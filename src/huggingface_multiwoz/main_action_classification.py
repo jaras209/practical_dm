@@ -42,7 +42,7 @@ def main(args):
         logging.info("Model training complete.")
     else:
         # Use the provided path for evaluation
-        trained_model_path = Path(args.model_root_path) / args.pretrained_model
+        trained_model_path = Path(args.model_root_path) / args.model_name_or_path
 
     # Evaluate the model
     logging.info("Evaluating the model...")
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--domains", default=[], nargs='*')
     parser.add_argument('--train', dest='train_model', action='store_true')
     parser.add_argument('--test', dest='train_model', action='store_false')
-    parser.set_defaults(train_model=False)
+    parser.set_defaults(train_model=True)
     args = parser.parse_args()
 
     # Run the main function with the parsed arguments
