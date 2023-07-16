@@ -1041,7 +1041,7 @@ class MultiWOZDatasetActionGeneration:
         new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
         # Filter only those actions that are supported
-        filtered_actions = [action for action in example_batch['actions'] if action in self.supported_actions]
+        filtered_actions = [[a for a in action if a in self.supported_actions] for action in example_batch['actions']]
 
         # Convert action lists into a string format
         actions = list(map(action_list_to_str, filtered_actions))
