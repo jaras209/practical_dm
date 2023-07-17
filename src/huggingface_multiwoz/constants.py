@@ -1,6 +1,6 @@
 UNK_ACTION = 'UNK'
-BELIEF = '[state]'
-CONTEXT = '[context]'
+STATE_CLA = '[state]'
+CONTEXT_CLA = '[context]'
 USER = '[user]'
 DATABASE = '[database]'
 DATABASE_COUNTS = '[database]'
@@ -11,7 +11,7 @@ USER_GEN = '[user]'
 DATABASE_COUNTS_GEN = '[database]'
 TASK_DESCRIPTION_STATE_UPDATE = 'Update state:'
 TASK_DESCRIPTION_ACTION_GENERATION = 'Generate actions:'
-SPECIAL_TOKENS = [BELIEF, DATABASE, DATABASE_COUNTS, CONTEXT, USER]
+SPECIAL_TOKENS = [STATE_CLA, DATABASE, DATABASE_COUNTS, CONTEXT_CLA, USER]
 DOMAIN_NAMES = sorted({'hotel', 'restaurant', 'bus', 'train', 'attraction', 'hospital', 'taxi'})
 OUTPUT_DF_COLUMNS = ['text', 'actions', 'predicted', 'dialogue_acts', 'system_utterance', 'scores']
 COMMON_SLOTS = ["intent", "requested"]

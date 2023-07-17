@@ -709,7 +709,7 @@ class MultiWOZDatasetActionsClassification:
         utterances = example_batch['utterance']
 
         # Convert the belief states in the example batch into string format.
-        belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
         # Convert the database_results in the example batch into string format and also string with counts
         # database_results = list(map(database_results_to_str, example_batch['database_results']))
@@ -720,10 +720,11 @@ class MultiWOZDatasetActionsClassification:
 
         # Combine the belief states, database_results, database_results_count, contexts, and user utterances into
         # a single string for each example in the batch.
-        texts = list(map(lambda belief, db_results_count, context, user_utter:
-                         BELIEF + ' ' + belief + ' ' + DATABASE_COUNTS + ' ' +
-                         db_results_count + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter,
-                         belief_states, database_results_count, contexts, utterances))
+        texts = list(map(lambda belief, context, user_utter, db_results_count:
+                         STATE_CLA + ' ' + belief + '. '
+                         + CONTEXT_CLA + ' ' + context + '. ' + USER + ' ' + user_utter + '. ' +
+                         DATABASE_COUNTS + ' ' + db_results_count,
+                         new_belief_states, contexts, utterances, database_results_count))
 
         # Use the tokenizer to convert these strings into a format suitable for model input
         tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length,
