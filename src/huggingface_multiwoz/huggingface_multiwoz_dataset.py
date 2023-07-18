@@ -588,8 +588,13 @@ class MultiWOZDatasetActionsClassification:
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
+        old_train_df = train_df
+
         # Get the subset dataframe
         train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
 
         logging.info(f"Tokenizer: {self.tokenizer_name}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
