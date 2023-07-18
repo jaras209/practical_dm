@@ -757,7 +757,8 @@ class MultiWOZDatasetBeliefUpdate:
                  domains: List[str] = None,
                  only_single_domain: bool = False,
                  batch_size: int = 32,
-                 strip_domain: bool = False):
+                 strip_domain: bool = False,
+                 subset_size: float = 0.3):
         """
         Initialize the MultiWOZDataset class.
 
@@ -801,6 +802,14 @@ class MultiWOZDatasetBeliefUpdate:
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        old_train_df = train_df
+
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
 
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Domains: {self.domains}")
@@ -898,7 +907,8 @@ class MultiWOZDatasetActionGeneration:
                  only_single_domain: bool = False,
                  batch_size: int = 32,
                  strip_domain: bool = False,
-                 min_action_support: int = 10):
+                 min_action_support: int = 10,
+                 subset_size: float = 0.3):
         """
         Initialize the MultiWOZDataset class.
 
@@ -942,6 +952,14 @@ class MultiWOZDatasetActionGeneration:
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        old_train_df = train_df
+
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
 
         logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
         logging.info(f"Domains: {self.domains}")

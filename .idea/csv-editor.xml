@@ -24,6 +24,20 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/models/action_classification_30/roberta-base-finetuned-2023-07-18-12-38-00/eval_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/models/action_classification_50/roberta-base-finetuned-2023-07-18-10-11-05/eval_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/models/action_generation/flan-t5-base-finetuned-2023-07-16-22-10-40/eval_metrics.csv">
           <value>
             <Attribute>
@@ -60,6 +74,13 @@
           </value>
         </entry>
         <entry key="/models/belief_state_update/flan-t5-base-finetuned-2023-07-15-22-15-08/eval_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36/eval_metrics.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />

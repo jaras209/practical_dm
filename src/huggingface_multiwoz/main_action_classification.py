@@ -70,7 +70,7 @@ if __name__ == "__main__":
                              "model is used for training. ")
     parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
-    parser.add_argument("--train_subset_size", default=0.3, type=float, help="Size of the subset of train data to use")
+    parser.add_argument("--train_subset_size", default=0.5, type=float, help="Size of the subset of train data to use")
     parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
     parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")

@@ -21,7 +21,8 @@ def main(args):
                                                        max_target_length=args.max_target_length,
                                                        root_cache_path=args.data_path,
                                                        root_database_path=args.data_path,
-                                                       domains=args.domains)
+                                                       domains=args.domains,
+                                                       subset_size=args.train_subset_size)
 
     if args.train_model:
         # Train the model
@@ -66,6 +67,7 @@ if __name__ == "__main__":
                              "model is used for training.")
     parser.add_argument("--tokenizer_name", default='google/flan-t5-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
+    parser.add_argument("--train_subset_size", default=0.5, type=float, help="Size of the subset of train data to use")
     parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
     parser.add_argument("--max_source_length", default=260, type=int, help="Max seq length of input to model")
     parser.add_argument("--max_target_length", default=230, type=int, help="Max seq length of output to model")
