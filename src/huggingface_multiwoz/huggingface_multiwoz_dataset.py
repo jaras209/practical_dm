@@ -18,6 +18,7 @@ from tqdm import tqdm
 from database import MultiWOZDatabase
 from transformers import AutoTokenizer
 from constants import *
+from dataframe_utils import print_df_statistics, get_dialogue_subset, print_examples
 
 logging.basicConfig(level=logging.INFO)
 
@@ -364,6 +365,7 @@ def load_multiwoz_dataset(split: str,
         # Iterate through dialogues in the dataset, preprocessing each dialogue
         for dialogue_id, dialogue in tqdm(enumerate(multi_woz_dataset), desc=f"Preprocessing {split} data",
                                           unit="dialogue", ncols=100):
+            print(dialogue['services'])
             if only_single_domain and len(dialogue['services']) != 1:
                 continue
 
@@ -527,58 +529,6 @@ def str_to_action_list(action_str: str) -> List[str]:
     return action_list
 
 
-class MultiWOZDataset:
-    def __init__(self,
-                 context_len: int = 1,
-                 root_database_path: Union[str, Path] = "../huggingface_data",
-                 domains: List[str] = None,
-                 only_single_domain: bool = False):
-        """
-        Initialize the MultiWOZDataset class.
-
-        Args:
-            context_len (int, optional): The maximum length of the conversation history to keep for each example.
-            root_database_path (str, Path, optional): The path to the directory where the database is saved.
-            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
-            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
-
-        """
-        super().__init__()
-        self.context_len = context_len
-        self.domains = domains
-        self.only_single_domain = only_single_domain
-
-        # Load MultiWoz Database, which is locally saved at database_path
-        database_path = Path(root_database_path) / "database"
-        self.database = MultiWOZDatabase(database_path)
-
-        logging.info(f"Domains: {self.domains}")
-
-    def load_dataset(self, root_cache_path: Union[str, Path] = "../huggingface_data", strip_domain: bool = False):
-        """
-        Load the MultiWOZ dataset into a DataFrame.
-
-        Args:
-            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
-            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
-
-        Returns:
-            pd.DataFrame: The loaded dataset.
-        """
-        # Load train/val/test datasets into DataFrames
-        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
-                                         root_cache_path=root_cache_path, domains=self.domains,
-                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
-        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
-                                       root_cache_path=root_cache_path, domains=self.domains,
-                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
-        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
-                                        root_cache_path=root_cache_path, domains=self.domains,
-                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
-
-        return train_df, val_df, test_df
-
-
 class MultiWOZDatasetActionsClassification:
     def __init__(self,
                  tokenizer_name: str,
@@ -591,7 +541,8 @@ class MultiWOZDatasetActionsClassification:
                  only_single_domain: bool = False,
                  batch_size: int = 32,
                  strip_domain: bool = False,
-                 min_action_support: int = 5):
+                 min_action_support: int = 5,
+                 subset_size: float = 0.3):
         """
         Initialize the MultiWOZDataset class.
 
@@ -636,6 +587,9 @@ class MultiWOZDatasetActionsClassification:
         test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
                                         root_cache_path=root_cache_path, domains=domains,
                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
 
         logging.info(f"Tokenizer: {self.tokenizer_name}")
         logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")

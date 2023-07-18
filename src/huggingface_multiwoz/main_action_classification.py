@@ -4,7 +4,7 @@ from pathlib import Path
 
 from constants import SPECIAL_TOKENS
 from evaluate_action_prediction import evaluate
-from huggingface_multiwoz_dataset import MultiWOZDatasetActionsClassification, belief_state_to_str
+from huggingface_multiwoz_dataset import MultiWOZDatasetActionsClassification
 from train_action_prediction import train
 
 
@@ -21,7 +21,8 @@ def main(args):
                                                                      additional_special_tokens=SPECIAL_TOKENS,
                                                                      root_cache_path=args.data_path,
                                                                      root_database_path=args.data_path,
-                                                                     domains=args.domains)
+                                                                     domains=args.domains,
+                                                                     subset_size=args.train_subset_size)
 
     if args.train_model:
         # Train the model
@@ -46,7 +47,7 @@ def main(args):
 
     # Evaluate the model
     logging.info("Evaluating the model...")
-    evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
+    # evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
     logging.info("Model evaluation complete. Results saved to files.")
 
 
@@ -60,7 +61,7 @@ if __name__ == "__main__":
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        default="/home/safarjar/HCN/models/action_classification",
+                        default="/home/safarjar/HCN/models/action_classification_30",
                         # default="../../models/",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
@@ -69,14 +70,15 @@ if __name__ == "__main__":
                              "model is used for training. ")
     parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
                         help="Path to the pretrained Hugging face tokenizer.")
+    parser.add_argument("--train_subset_size", default=0.3, type=float, help="Size of the subset of train data to use")
     parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
     parser.add_argument("--max_seq_length", default=509, type=int, help="Max seq length of input to transformer")
-    parser.add_argument("--epochs", default=50, type=int, help="Number of epochs.")
+    parser.add_argument("--epochs", default=30, type=int, help="Number of epochs.")
     parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
     parser.add_argument("--early_stopping_patience", default=15, type=int, help="Number of epochs after which the "
                                                                                "training is ended if there is no "
                                                                                "improvement on validation data")
-    parser.add_argument("--warmup_steps", type=int, default=1000, help="Number of steps for the warmup phase. During "
+    parser.add_argument("--warmup_steps", type=int, default=300, help="Number of steps for the warmup phase. During "
                                                                       "this phase, the learning rate gradually "
                                                                       "increases to the initial learning rate.")
     parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps after which the training "
