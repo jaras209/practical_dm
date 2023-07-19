@@ -48,6 +48,7 @@ def evaluate_models(df,
     logging.info("Starting models evaluation")
 
     save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Using device: {device}")
@@ -109,13 +110,14 @@ def evaluate_models(df,
 
         # Prepare inputs for the action generation model
 
-        new_belief_states = state_predicted_texts if use_predicted_states else list(
+        new_belief_states_texts = state_predicted_texts if use_predicted_states else list(
             map(belief_state_to_str, df['new_belief_state']))
+        new_belief_states_dicts = [str_to_belief_state(s) for s in new_belief_states_texts]
         action_gen_input_texts = list(map(lambda belief, context, user_utter, db_results_count:
                                           TASK_DESCRIPTION_ACTION_GENERATION + ' ' + STATE_GEN + ' ' + belief + '. '
                                           + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter + '. ' +
                                           DATABASE_COUNTS_GEN + ' ' + db_results_count,
-                                          new_belief_states, contexts, utterances, database_results_count))
+                                          new_belief_states_texts, contexts, utterances, database_results_count))
 
         # Make predictions with the action generation model
         logging.info("Computing predictions for action generation model")
@@ -136,7 +138,7 @@ def evaluate_models(df,
 
         # Create dialogue acts
         logging.info("Computing dialogue acts for action generation model")
-        action_gen_predicted_da = create_dialogue_acts(action_gen_predicted_lists, new_belief_states, database)
+        action_gen_predicted_da = create_dialogue_acts(action_gen_predicted_lists, new_belief_states_dicts, database)
 
         logging.info("Action generation model evaluation finished\n\n")
     # Load and create pipeline for action classification model if provided
@@ -151,15 +153,16 @@ def evaluate_models(df,
                                                  top_k=5,
                                                  device=0 if device.type == 'cuda' else -1)
 
-        new_belief_states = state_predicted_texts if use_predicted_states else list(
+        new_belief_states_texts = state_predicted_texts if use_predicted_states else list(
             map(belief_state_to_str, df['new_belief_state']))
+        new_belief_states_dicts = [str_to_belief_state(s) for s in new_belief_states_texts]
 
         # Prepare inputs for the action classification model
         action_cla_input_texts = list(map(lambda belief, context, user_utter, db_results_count:
                                           STATE_CLA + ' ' + belief + '. '
                                           + CONTEXT_CLA + ' ' + context + '. ' + USER + ' ' + user_utter + '. ' +
                                           DATABASE_COUNTS + ' ' + db_results_count,
-                                          new_belief_states, contexts, utterances, database_results_count))
+                                          new_belief_states_texts, contexts, utterances, database_results_count))
 
         # Make predictions with the action classification model
         logging.info("Computing predictions for action classification model")
@@ -177,7 +180,7 @@ def evaluate_models(df,
 
         # Create dialogue acts
         logging.info("Computing dialogue acts for action classification model")
-        action_cla_predicted_da = create_dialogue_acts(action_cla_predicted_lists, new_belief_states, database)
+        action_cla_predicted_da = create_dialogue_acts(action_cla_predicted_lists, new_belief_states_dicts, database)
         logging.info("Action classification model evaluation finished\n\n")
 
     # Prepare output data frame
@@ -205,9 +208,9 @@ def evaluate_models(df,
 
     # Reorder columns
     results_df = results_df[
-        ['dialogue_id', 'user_turn_id', 'system_turn_id' 'utterance', 'context', 'system_utterance',
+        ['dialogue_id', 'user_turn_id', 'system_turn_id', 'utterance', 'context', 'system_utterance',
          'state_input', 'state_refe_text', 'state_pred_text', 'state_refe_dict', 'state_pred_dict',
-         'action_input', 'action_refe', 'action_gen_pred', 'action_cla_pred', 'action_gen_pred_da',
+         'action_input', 'action_refe', 'action_gen_pred_list', 'action_cla_pred_list', 'action_gen_pred_da',
          'action_cla_pred_da']]
 
     # Save full results
@@ -241,24 +244,24 @@ def evaluate_models(df,
 def main():
     parser = argparse.ArgumentParser(description='Evaluate models')
     parser.add_argument('--state_model_name_or_path', type=str,
-                        default="/Users/jaroslavsafar/Developer/HCN/models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36",
+                        default="/home/safarjar/HCN/test_models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36",
                         help='Path or name of the state model')
     parser.add_argument('--action_cla_model_name_or_path', type=str,
-                        default="/Users/jaroslavsafar/Developer/HCN/models/action_classification/roberta-base-finetuned-2023-07-17-18-36-51",
+                        default="/home/safarjar/HCN/test_models/action_classification/roberta-base-finetuned-2023-07-17-18-36-51",
                         help='Path or name of the action classification model')
     parser.add_argument('--action_gen_model_name_or_path', type=str,
-                        default="/Users/jaroslavsafar/Developer/HCN/models/action_generation/flan-t5-base-finetuned-2023-07-18-21-00-58",
+                        default="/home/safarjar/HCN/test_models/action_generation/flan-t5-base-finetuned-2023-07-18-21-00-58",
                         help='Path or name of the action generation model')
     parser.add_argument('--gen_tokenizer_name', type=str, default='google/flan-t5-base',
                         help='Name of the generation tokenizer')
     parser.add_argument('--cla_tokenizer_name', type=str, default='roberta-base',
                         help='Name of the classification tokenizer')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--max_source_length', type=int, default=260, help='Maximum source length')
     parser.add_argument('--max_target_length', type=int, default=230, help='Maximum target length')
     parser.add_argument('--use_predicted_states', type=bool, default=False,
                         help='Whether to use predicted belief states')
-    parser.add_argument('--save_path', type=str, default="/home/safarjar/HCN/results/", help='Path to save the results')
+    parser.add_argument('--save_path', type=str, default="/home/safarjar/HCN/results/test100/ground_true_state", help='Path to save the results')
     parser.add_argument('--dataset_name', type=str, default='test', help='Name of the dataset')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed')
     parser.add_argument("--data_path",
