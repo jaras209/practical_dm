@@ -41,7 +41,6 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
     for domain in DOMAIN_SLOTS:
         y_true_domain = [domain in ref for ref in ref_domains]
         y_pred_domain = [domain in pred for pred in pred_domains]
-        support = sum(y_true_domain)
 
         precision, recall, f1, _ = precision_recall_fscore_support(y_true=y_true_domain, y_pred=y_pred_domain,
                                                                    average='binary', zero_division=0)
@@ -50,7 +49,7 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
             'precision': precision,
             'recall': recall,
             'f1-score': f1,
-            'support': support,
+            'support': sum(y_true_domain),
         }
 
     global_y_true = []  # Accumulate all true values for global metrics
@@ -65,39 +64,36 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
                 ref_slot_value = ref.get(domain, {}).get(slot)
                 pred_slot_value = pred.get(domain, {}).get(slot)
 
-                if ref_slot_value is not None or pred_slot_value is not None:
-                    if ref_slot_value is None:
-                        # Handle case where slot is missing in reference but present in prediction
-                        ref_slot_value = "missing_slot"
-                    if pred_slot_value is None:
-                        # Handle case where slot is missing in prediction but present in reference
-                        pred_slot_value = "missing_slot"
-
-                    y_true.append(ref_slot_value)
-                    y_pred.append(pred_slot_value)
+                # Encode slot values as 1 for match and 0 for non-match
+                if ref_slot_value == pred_slot_value and ref_slot_value is not None:
+                    y_true.append(1)
+                    y_pred.append(1)
+                elif ref_slot_value is None and pred_slot_value is None:
+                    continue
+                else:
+                    y_true.append(1)
+                    y_pred.append(0)
 
             global_y_true.extend(y_true)  # Add to global true values
             global_y_pred.extend(y_pred)  # Add to global predicted values
 
-            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='micro',
+            precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary',
                                                                        zero_division=0)
-            support = len([y for y in y_true if y != "missing_slot"])
             metrics[f'{domain}-{slot}'] = {
                 'precision': precision,
                 'recall': recall,
                 'f1-score': f1,
-                'support': support,
+                'support': len(y_true),
             }
 
     # Compute global metrics
-    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='micro',
+    precision, recall, f1, _ = precision_recall_fscore_support(global_y_true, global_y_pred, average='binary',
                                                                zero_division=0)
-    support = len([y for y in global_y_true if y != "missing_slot"])
     metrics['global'] = {
         'precision': precision,
         'recall': recall,
         'f1-score': f1,
-        'support': support,
+        'support': len(global_y_true),
     }
 
     # Compute and add joint goal accuracy to global metrics
