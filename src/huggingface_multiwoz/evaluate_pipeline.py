@@ -19,7 +19,7 @@ from constants import *
 
 
 def save_dataframe(df: pd.DataFrame, save_path: Path, filename: str, also_json: bool = True):
-    df.to_csv(save_path / f'{filename}.csv', index=False, sep='\t')
+    df.to_csv(save_path / f'{filename}.csv', index=True, sep='\t')
     if also_json:
         with open(save_path / f'{filename}.json', 'w') as f:
             json.dump(df.to_dict(orient='records'), f, indent=4)
