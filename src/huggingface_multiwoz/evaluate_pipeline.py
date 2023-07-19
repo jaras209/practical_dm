@@ -234,8 +234,8 @@ def evaluate_models(df,
     # Create action selection output data frame
     if action_gen_model_name_or_path is not None or action_cla_model_name_or_path is not None:
         action_selection_df = results_df[
-            ['dialogue_id', 'user_turn_id', 'system_turn_id', 'action_input', 'action_refe', 'action_gen_pred',
-             'action_cla_pred', 'action_gen_pred_da', 'action_cla_pred_da']]
+            ['dialogue_id', 'user_turn_id', 'system_turn_id', 'action_input', 'action_refe', 'action_gen_pred_list',
+             'action_cla_pred_list', 'action_gen_pred_da', 'action_cla_pred_da']]
         save_dataframe(action_selection_df, save_path, f'{dataset_name}_action_selection_results')
 
     logging.info("Evaluation completed")
