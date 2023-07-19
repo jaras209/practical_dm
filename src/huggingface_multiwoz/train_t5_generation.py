@@ -13,15 +13,17 @@ from transformers import (
 )
 import torch
 
-from metrics import MetricsCallback, action_generation_metrics_builder, belief_update_metrics_builder, preprocess_logits_for_metrics
-from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration
+from metrics import MetricsCallback, action_generation_metrics_builder, belief_update_metrics_builder, \
+    preprocess_logits_for_metrics
+from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration, \
+    MultiWOZDatasetAllGeneration
 from utils import highest_checkpoint
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
 
 
-def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration],
+def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGeneration, MultiWOZDatasetAllGeneration],
           model_root_path: str,
           model_name_or_path: str,
           batch_size: int,
@@ -70,15 +72,17 @@ def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGener
     run_name = f'{Path(model_name_or_path).name}-finetuned-{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}'
     output_path = Path(model_root_path) / run_name
 
-    # Create a directory for tensorboard logs
-    tensorboard_logs_dir = Path(output_path) / 'tensorboard-logs'
-    tensorboard_logs_dir.mkdir(parents=True, exist_ok=True)
-
     if checkpoint:
-        logging.info(f"Resuming training from checkpoint {checkpoint} using {model_name_or_path} as base model.")
+        logging.info(f"Resuming training from checkpoint {checkpoint}.")
+        output_path = model_name_or_path
+        model_name_or_path = checkpoint
     else:
         logging.info(f"Starting training from scratch using {model_name_or_path} as base model.")
     logging.info(f"Saving model to {output_path}.")
+
+    # Create a directory for tensorboard logs
+    tensorboard_logs_dir = Path(output_path) / 'tensorboard-logs'
+    tensorboard_logs_dir.mkdir(parents=True, exist_ok=True)
 
     num_of_devices = torch.cuda.device_count()
     logging.info(f"Using as the main device: {device}")
@@ -116,7 +120,7 @@ def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGener
         max_grad_norm=1.0,
         num_train_epochs=epochs,
         load_best_model_at_end=True,
-        metric_for_best_model=metric_for_best_model,
+        metric_for_best_model="loss",
         save_total_limit=1,
         warmup_steps=warmup_steps_calculated,
         # eval_accumulation_steps=2,
@@ -134,7 +138,7 @@ def train(dataset: Union[MultiWOZDatasetBeliefUpdate, MultiWOZDatasetActionGener
                       args=training_args,
                       train_dataset=dataset.dataset['train'],
                       eval_dataset=dataset.dataset['val'],
-                      compute_metrics=compute_metrics,
+                      # compute_metrics=compute_metrics,
                       preprocess_logits_for_metrics=preprocess_logits_for_metrics,
                       callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience),
                                  MetricsCallback()])

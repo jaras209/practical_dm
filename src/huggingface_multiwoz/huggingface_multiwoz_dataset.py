@@ -1113,3 +1113,171 @@ class MultiWOZDatasetActionGeneration:
             'labels': labels,
             'new_belief_state': new_belief_states,
         }
+
+
+class MultiWOZDatasetAllGeneration:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_source_length: int = None,
+                 max_target_length: int = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False,
+                 min_action_support: int = 10,
+                 subset_size: float = 0.3):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_source_length (int, optional): The maximum sequence length for tokenized input.
+            max_target_length (int, optional): The maximum sequence length for the output.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+
+        """
+        super().__init__()
+        self.tokenizer_name = tokenizer_name
+        self.max_source_length = max_source_length
+        self.max_target_length = max_target_length
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
+        self.min_action_support = min_action_support
+
+        # Initialize pretrained tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        old_train_df = train_df
+
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Create actions, count their support and filter the actions that have low support.
+        #   Count the occurrence of each action
+        action_counts = collections.Counter([action for example in train_df['actions'].to_list() for action in example])
+
+        #   Create a DataFrame from the action_counts dictionary
+        actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
+        actions_df['supported'] = actions_df['support'] >= self.min_action_support
+        actions_df = actions_df.sort_values(by='support', ascending=False)
+
+        #   Specify the file path and save the DataFrame as CSV
+        actions_path = Path(root_cache_path) / "action_supports.csv"
+        actions_df.to_csv(actions_path, index=False)
+
+        #   Filter out actions with support less than the threshold
+        self.supported_actions = set(actions_df[actions_df['supported']]['action'].tolist())
+
+        # Create HuggingFace datasets
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
+        test_dataset = self.create_huggingface_dataset(test_df)
+
+        # Log number of truncated input and output examples
+        logging.info(f"Truncated inputs: {TRUNCATED_INPUTS}, truncated outputs: {TRUNCATED_OUTPUTS}")
+
+        # Create dataset dictionary
+        self.dataset = datasets.DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset,
+            'val': val_dataset}
+        )
+
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
+        """
+        Creates HuggingFace dataset from pandas DataFrame
+        :param df: input DataFrame
+        :return: output HuggingFace dataset
+        """
+        # Create HuggingFace dataset from Dataset
+        dataset = datasets.Dataset.from_pandas(df)
+
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
+
+        return dataset
+
+    def tokenize_and_cast_function(self, example_batch: Dict[str, Any]) -> Dict[
+        str, Union[List[str], List[int], np.ndarray]]:
+        utterances = example_batch['utterance']
+
+        # Convert the belief states in the example batch into string format.
+        old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+
+        # Filter only those actions that are supported
+        filtered_actions = [[a for a in action if a in self.supported_actions] for action in example_batch['actions']]
+
+        # Convert action lists into a string format
+        actions = list(map(action_list_to_str, filtered_actions))
+
+        # Convert the database_results in the example batch into string format with counts
+        database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
+
+        # Convert the contexts in the example batch into string format, with elements joined by the separator token.
+        separator = CONTEXT_SEP
+        contexts = list(map(lambda x: separator.join(x), example_batch['context']))
+
+        texts_actions = list(map(lambda belief, context, user_utter, db_results_count:
+                                 TASK_DESCRIPTION_ACTION_GENERATION + ' ' + STATE_GEN + ' ' + belief + '. '
+                                 + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter + '. ' +
+                                 DATABASE_COUNTS_GEN + ' ' + db_results_count,
+                                 new_belief_states, contexts, utterances, database_results_count))
+
+        texts_state = list(map(lambda belief, context, user_utter:
+                               TASK_DESCRIPTION_STATE_UPDATE + ' ' + STATE_GEN + ' ' + belief + '. '
+                               + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter,
+                               old_belief_states, contexts, utterances))
+
+        inputs = texts_actions + texts_state
+        outputs = actions + new_belief_states
+
+        tokenized_inputs = self.tokenizer(inputs, padding='max_length', truncation=True,
+                                          max_length=self.max_source_length, return_tensors="pt")
+
+        tokenized_outputs = self.tokenizer(outputs, padding='max_length', truncation=True,
+                                           max_length=self.max_target_length, return_tensors="pt")
+
+        # Get labels
+        labels = tokenized_outputs['input_ids']
+
+        # Replace padding token id's of the labels by -100, so it's ignored by the loss
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        return {
+            'input_ids': tokenized_inputs['input_ids'],
+            'attention_mask': tokenized_inputs['attention_mask'],
+            'labels': labels,
+        }

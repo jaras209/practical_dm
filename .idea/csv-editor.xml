@@ -143,10 +143,38 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/results/test100/generated_state/test_action_cla_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/results/test100/ground_true/_state_metrics.csv">
           <value>
             <Attribute>
               <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/test100/ground_true_state/test_action_cla_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/test100/ground_true_state/test_action_gen_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/test100/ground_true_state/test_action_selection_results.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
@@ -165,6 +193,13 @@
           </value>
         </entry>
         <entry key="/results/test100/ground_true_state/test_state_metrics.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/test50/ground_true_state/test_state_metrics.csv">
           <value>
             <Attribute>
               <option name="separator" value="&#9;" />
