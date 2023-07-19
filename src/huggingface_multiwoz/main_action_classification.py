@@ -47,7 +47,7 @@ def main(args):
 
     # Evaluate the model
     logging.info("Evaluating the model...")
-    # evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
+    evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
     logging.info("Model evaluation complete. Results saved to files.")
 
 

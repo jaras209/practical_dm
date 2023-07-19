@@ -2,7 +2,7 @@ import logging
 import time
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Union
 
 import datasets
 import numpy as np
@@ -66,8 +66,9 @@ def save_results(model_path: Path, dataset_name: str, results_df: pd.DataFrame,
     logging.info(f"Metrics saved to {model_path / f'{dataset_name}_metrics.csv'}.")
 
 
-def evaluate(dataset: MultiWOZDatasetBeliefUpdate, model_path: Path, only_dataset: str = None, max_target_length: int = 32,
-             batch_size: int = 8) -> None:
+def evaluate(dataset: MultiWOZDatasetBeliefUpdate, model_path: Path, only_dataset: Union[str, List[str]] = None,
+             max_target_length: int = 32,
+             batch_size: int = 16) -> None:
     """
     Evaluate the model on the datasets in multiwoz_dataset.
 
@@ -75,10 +76,32 @@ def evaluate(dataset: MultiWOZDatasetBeliefUpdate, model_path: Path, only_datase
         dataset (MultiWOZDatasetActions): The dataset object containing the dataset and tokenizer.
         model_path (Path): The path to the trained model.
         top_k (int, optional): The top k actions to consider in the model pipeline. Defaults to 5.
-        only_dataset (str, optional): If set, only evaluate the model on the specified dataset. Defaults to None.
+        only_dataset (str, optional): If set, only evaluate the model on the specified datasets. Defaults to None.
     """
-    if only_dataset is not None and only_dataset not in dataset.dataset:
-        raise ValueError(f"Dataset {only_dataset} not found in multiwoz_dataset.")
+    dataset_names = []
+    if only_dataset is not None:
+        if isinstance(only_dataset, str):
+            if only_dataset not in dataset.dataset:
+                raise ValueError(f"Dataset {only_dataset} not found in multiwoz_dataset.")
+            else:
+                dataset_names.append(only_dataset)
+
+        elif isinstance(only_dataset, list):
+            for d in only_dataset:
+                if isinstance(d, str):
+                    if d not in dataset.dataset:
+                        raise ValueError(f"Dataset {only_dataset} not found in multiwoz_dataset.")
+
+                    else:
+                        dataset_names.append(d)
+
+                else:
+                    raise ValueError(f"Dataset {only_dataset} is not string.")
+        else:
+            raise ValueError(f"{only_dataset} is not string nor list of strings.")
+
+    else:
+        dataset_names = list[dataset.dataset.keys()]
 
     logging.info(f"Evaluating model {model_path}...")
 
@@ -100,7 +123,7 @@ def evaluate(dataset: MultiWOZDatasetBeliefUpdate, model_path: Path, only_datase
 
     # Evaluate the model on the datasets in multiwoz_dataset.
     for dataset_name, dataset_data in dataset.dataset.items():
-        if only_dataset is not None and dataset_name != only_dataset:
+        if dataset_name not in dataset_names:
             continue
 
         dataset_start_time = time.time()

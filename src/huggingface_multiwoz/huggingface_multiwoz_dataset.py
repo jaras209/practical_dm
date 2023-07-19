@@ -302,7 +302,7 @@ def parse_dialogue_into_examples(dialogue_id: int,
 def load_multiwoz_dataset(split: str,
                           database: MultiWOZDatabase,
                           domains: List[str] = None,
-                          context_len: int = None,
+                          context_len: int = 1,
                           only_single_domain: bool = False,
                           root_cache_path: Union[Path, str] = "data/huggingface_data",
                           strip_domain: bool = False) -> pd.DataFrame:
@@ -365,7 +365,6 @@ def load_multiwoz_dataset(split: str,
         # Iterate through dialogues in the dataset, preprocessing each dialogue
         for dialogue_id, dialogue in tqdm(enumerate(multi_woz_dataset), desc=f"Preprocessing {split} data",
                                           unit="dialogue", ncols=100):
-            print(dialogue['services'])
             if only_single_domain and len(dialogue['services']) != 1:
                 continue
 
@@ -516,17 +515,60 @@ def str_to_action_list(action_str: str) -> List[str]:
                 # Format the action
                 formatted_action = f'{domain}-{action}'
 
-                # TODO: check this first but we need to have the set of UNIQUE ACTIONS in constants.py first.
-                #  Move the append to the if statement
                 # Check if the action is in the set of all possible actions
-                # if formatted_action in UNIQUE_ACTIONS:
-                #     If it is, add it to the list of actions
-                action_list.append(formatted_action)
+                if formatted_action in UNIQUE_ACTIONS:
+                    # If it is, add it to the list of actions
+                    action_list.append(formatted_action)
         except ValueError:
             # This occurs if domain_action_str could not be split correctly
             logging.debug(f"Could not parse domain-action string: {domain_action_str} in input string {action_str}")
 
     return action_list
+
+
+class MultiWOZDatasetTest:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_seq_length: int = None,
+                 additional_special_tokens: List[str] = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False,
+                 min_action_support: int = 5,
+                 subset_size: float = 0.3):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_seq_length (int, optional): The maximum sequence length for tokenized input.
+            additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+            min_action_support (int, optional): Set the minimum action support size to consider that action in train data
+
+        """
+        super().__init__()
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
 
 class MultiWOZDatasetActionsClassification:

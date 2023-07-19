@@ -4,40 +4,33 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from constants import ACTIONS
+
 from metrics import compute_belief_state_metrics, compute_belief_state_exact_match_ratio
 from huggingface_multiwoz_dataset import str_to_belief_state
 
-path = Path('/Users/jaroslavsafar/Developer/HCN/models/belief_state_update/flan-t5-base-finetuned-2023-06-27-10-23-50/test_results.csv')
-results_df = pd.read_csv(path, sep="\t")
-results_df.dropna(inplace=True)
-
-predictions_text = results_df['predicted_text'].tolist()
-references_text = results_df['reference_text'].tolist()
+path = Path('/Users/jaroslavsafar/Developer/HCN/data/action_supports.csv')
 
 
-# Convert the string representations back into dictionary format
-predictions_dict = [str_to_belief_state(pred) for pred in predictions_text]
-references_dict = [str_to_belief_state(ref) for ref in references_text]
+def check_actions(df):
+    column_values = df.iloc[:, 0].tolist()
+    dataframe_diff = set(column_values) - set(ACTIONS)
+    actions_diff = set(ACTIONS) - set(column_values)
+    return dataframe_diff, actions_diff
 
-"""
-for p, r in zip(predictions_dict, references_dict):
+# Example usage
+df = pd.read_csv(path)  # Replace 'your_data.csv' with your actual DataFrame file
 
-    print(f"PRED = {p}, TYPE = {type(p)}")
-    print(f"REFE = {r}, TYPE = {type(r)}")
-    print(f"{p == r =}")
+dataframe_diff, actions_diff = check_actions(df)
 
-    print(f"=============================")
-"""
-metrics = compute_belief_state_metrics(references=references_dict, predictions=predictions_dict)
-exact_match_ratio = compute_belief_state_exact_match_ratio(references=references_dict,
-                                                           predictions=predictions_dict)
-print(metrics)
-metrics_dict = {
-    "precision": metrics['global']['precision'],
-    "recall": metrics['global']['recall'],
-    "f1-score": metrics['global']['f1-score'],
-    "exact_match_ratio": exact_match_ratio,
-}
+if len(dataframe_diff) > 0:
+    print("Actions in DataFrame that are not in the ACTIONS list:")
+    print(dataframe_diff)
+else:
+    print("All actions in the DataFrame are in the ACTIONS list.")
 
-print(metrics_dict)
-
+if len(actions_diff) > 0:
+    print("Actions in the ACTIONS list that are not in the DataFrame:")
+    print(actions_diff)
+else:
+    print("All actions in the ACTIONS list are in the DataFrame.")

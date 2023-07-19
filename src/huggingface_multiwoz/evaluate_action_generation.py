@@ -91,9 +91,9 @@ def create_dialogue_acts(actions: List[List[str]], belief_states: List[Dict[str,
                 continue
 
             match = re.match(r'(\w+)-(\w+)(?:\((\w+)\))?', action)
-            if match:
+            try:
                 domain, action, slot = match.groups()
-            else:
+            except ValueError:
                 raise ValueError(f"Action {action} doesn't match expected format")
 
             # Prepare base dialogue act

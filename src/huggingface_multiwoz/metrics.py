@@ -100,6 +100,10 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
         'support': support,
     }
 
+    # Compute and add joint goal accuracy to global metrics
+    joint_goal_accuracy = compute_belief_state_exact_match_ratio(references=references, predictions=predictions)
+    metrics['global']['joint_goal_accuracy'] = joint_goal_accuracy
+
     return metrics
 
 
@@ -141,6 +145,10 @@ def compute_action_metrics(references: List[List[str]], predictions: List[List[s
             'f1-score': f1,
             'support': support,
         }
+
+    # Compute and add turn level accuracy to global metrics
+    turn_level_accuracy = compute_actions_exact_match_ratio(references, predictions)
+    metrics['global'] = {'turn_level_accuracy': turn_level_accuracy}
 
     return metrics
 
