@@ -64,15 +64,20 @@ def compute_belief_state_metrics(references: List[Dict[str, Dict[str, str]]],
                 ref_slot_value = ref.get(domain, {}).get(slot)
                 pred_slot_value = pred.get(domain, {}).get(slot)
 
-                # Encode slot values as 1 for match and 0 for non-match
+                # Correct prediction, true positive
                 if ref_slot_value == pred_slot_value and ref_slot_value is not None:
                     y_true.append(1)
                     y_pred.append(1)
-                elif ref_slot_value is None and pred_slot_value is None:
-                    continue
-                else:
+                # Incorrect prediction, false negative
+                elif ref_slot_value is not None and (pred_slot_value is None or pred_slot_value != ref_slot_value):
                     y_true.append(1)
                     y_pred.append(0)
+                # Incorrect prediction, false positive
+                elif ref_slot_value is None and pred_slot_value is not None:
+                    y_true.append(0)
+                    y_pred.append(1)
+                else:
+                    continue
 
             global_y_true.extend(y_true)  # Add to global true values
             global_y_pred.extend(y_pred)  # Add to global predicted values
