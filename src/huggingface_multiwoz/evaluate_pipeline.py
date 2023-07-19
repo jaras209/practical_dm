@@ -244,13 +244,13 @@ def evaluate_models(df,
 def main():
     parser = argparse.ArgumentParser(description='Evaluate models')
     parser.add_argument('--state_model_name_or_path', type=str,
-                        default="/home/safarjar/HCN/test_models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36",
+                        default="../../models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36",
                         help='Path or name of the state model')
     parser.add_argument('--action_cla_model_name_or_path', type=str,
-                        default="/home/safarjar/HCN/test_models/action_classification/roberta-base-finetuned-2023-07-17-18-36-51",
+                        default="../../models/models/action_classification/roberta-base-finetuned-2023-07-17-18-36-51",
                         help='Path or name of the action classification model')
     parser.add_argument('--action_gen_model_name_or_path', type=str,
-                        default="/home/safarjar/HCN/test_models/action_generation/flan-t5-base-finetuned-2023-07-18-21-00-58",
+                        default="../../models/models/action_generation/flan-t5-base-finetuned-2023-07-18-21-00-58",
                         help='Path or name of the action generation model')
     parser.add_argument('--gen_tokenizer_name', type=str, default='google/flan-t5-base',
                         help='Name of the generation tokenizer')
@@ -261,11 +261,11 @@ def main():
     parser.add_argument('--max_target_length', type=int, default=230, help='Maximum target length')
     parser.add_argument('--use_predicted_states', type=bool, default=False,
                         help='Whether to use predicted belief states')
-    parser.add_argument('--save_path', type=str, default="/home/safarjar/HCN/results/test100/ground_true_state", help='Path to save the results')
+    parser.add_argument('--save_path', type=str, default="../../results/test100/bla", help='Path to save the results')
     parser.add_argument('--dataset_name', type=str, default='test', help='Name of the dataset')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed')
     parser.add_argument("--data_path",
-                        default="/home/safarjar/HCN/data/huggingface_data",
+                        default="../../data/huggingface_data",
                         # default="../../data/huggingface_data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
@@ -278,6 +278,7 @@ def main():
 
     # Load your DataFrame here (df)
     test_df = load_multiwoz_dataset('test', database=database, root_cache_path=args.data_path)
+    print(test_df[test_df['utterance'] == "i need a place to dine in the center thats expensive"]['dialogue_id'])
 
     evaluate_models(test_df,
                     database=database,

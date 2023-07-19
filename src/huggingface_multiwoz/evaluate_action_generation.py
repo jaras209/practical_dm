@@ -100,7 +100,7 @@ def create_dialogue_acts(actions: List[List[str]], belief_states: List[Dict[str,
             dialogue_act_base = f"{domain}-{action}"
             dialogue_act = f"{dialogue_act_base}({slot})" if slot is not None else dialogue_act_base
 
-            if domain in DOMAIN_NAMES:
+            if domain in DOMAIN_NAMES and domain in belief_state:
                 # Query the domain if it's not already queried
                 if domain not in query_results_for_domain:
                     query_results_for_domain[domain] = database.query(domain, belief_state[domain])

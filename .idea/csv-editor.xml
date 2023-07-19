@@ -150,6 +150,20 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/results/test100/ground_true_state/test_results.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value=":" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/results/test100/ground_true_state/test_results_subset.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value=":" />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/results/test100/ground_true_state/test_state_metrics.csv">
           <value>
             <Attribute>
