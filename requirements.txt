@@ -1,7 +1,14 @@
 torch
 transformers
 datasets
+evaluate
 pandas
 numpy
 scikit-learn
 tqdm
+fuzzywuzzy
+accelerate
+python-Levenshtein
+nltk
+rouge_score
+absl-py

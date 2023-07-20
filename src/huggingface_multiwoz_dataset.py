@@ -1,127 +1,234 @@
-import json
+import collections
+import logging
 import pickle
-import argparse
-import os
-import time
-from datetime import datetime
+import random
+import re
+from collections import defaultdict
 from pathlib import Path
 import datasets
 import numpy as np
 import pandas as pd
-import torch.utils.data as torchdata
 import copy
+from typing import Optional, List, Any, Tuple, Union, Dict
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
-from typing import Optional, List, Any, Tuple
-import torch
-from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
 
-from transformers import (
-    AutoTokenizer,
-    AddedToken,
-    AutoModelForSequenceClassification,
-    Trainer,
-    TrainingArguments,
-    EarlyStoppingCallback,
-    pipelines
-)
-from transformers.pipelines.pt_utils import KeyDataset
+from database import MultiWOZDatabase
+from transformers import AutoTokenizer
+from constants import *
+from dataframe_utils import print_df_statistics, get_dialogue_subset
 
-BELIEF = '<|BELIEF|>'
-CONTEXT = '<|CONTEXT|>'
-USER = '<|USER|>'
-DOMAIN_NAMES = {'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'}
-DOMAIN_SLOTS = dict(bus={'bus-departure', 'bus-destination', 'bus-leaveat', 'bus-day'},
-                    hotel={'hotel-pricerange', 'hotel-bookstay', 'hotel-bookday', 'hotel-area', 'hotel-stars',
-                           'hotel-bookpeople', 'hotel-parking', 'hotel-type', 'hotel-name', 'hotel-internet'},
-                    restaurant={'restaurant-bookpeople', 'restaurant-booktime', 'restaurant-pricerange',
-                                'restaurant-name', 'restaurant-area', 'restaurant-bookday', 'restaurant-food',
-                                },
-                    police={'something_police'},
-                    train={'train-departure', 'train-bookpeople', 'train-destination', 'train-leaveat',
-                           'train-day', 'train-arriveby'},
-                    attraction={'attraction-type', 'attraction-area', 'attraction-name'},
-                    hospital={'hospital-department'},
-                    taxi={'taxi-departure', 'taxi-destination', 'taxi-arriveby', 'taxi-leaveat'})
+logging.basicConfig(level=logging.INFO)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--pretrained_model",
-                    # default='/home/safar/HCN/models/hf_multiwoz_hotel/roberta-base/roberta-base_230315-170036_230316-124221',
-                    default='roberta-base',
-                    # default='../models/hf_hotel_roberta-base_230316-151206',
-                    type=str,
-                    help="Path to the pretrained Hugging face model.")
-parser.add_argument("--tokenizer_name", default='roberta-base', type=str,
-                    help="Path to the pretrained Hugging face tokenizer.")
-parser.add_argument("--batch_size", default=8, type=int, help="Batch size.")
-parser.add_argument("--max_seq_length", default=None, type=int, help="Max seq length of input to transformer")
-parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
-parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate.")
-parser.add_argument("--early_stopping_patience", default=10, type=int, help="Number of epochs after which the "
-                                                                            "training is ended if there is no "
-                                                                            "improvement on validation data")
-parser.add_argument("--save_folder", default="/home/safar/HCN/models/hf_multiwoz_train", type=str,
-                    help="Name of the folder where to save the model or where to load it from")
-parser.add_argument("--cache_dir",
-                    default="/home/safar/HCN/huggingface_dataset_train",
-                    # default="../huggingface_dataset_hotel",
-                    type=str,
-                    help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
-parser.add_argument("--domains", default=['train'], nargs='*')
-parser.add_argument('--train', dest='train_model', action='store_true')
-parser.add_argument('--test', dest='train_model', action='store_false')
-parser.set_defaults(train_model=True)
-args = parser.parse_args([] if "__file__" not in globals() else None)
-
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+TRUNCATED_INPUTS = 0
+TRUNCATED_OUTPUTS = 0
 
 
-def compute_metrics(eval_pred):
-    logits, y_true = eval_pred
-    y_pred = (logits >= 0).astype(np.float32)
-    return {"accuracy": accuracy_score(y_true=y_true, y_pred=y_pred),
-            "recall": recall_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "precision": precision_score(y_true=y_true, y_pred=y_pred, average='weighted'),
-            "f1": f1_score(y_true=y_true, y_pred=y_pred, average='weighted')}
+def extract_act_type_slot_name_pairs(dialogue_acts,
+                                     strip_domain: bool = False) -> Tuple[List[str], List[Dict]]:
+    """
+    Extract act_type-slot_name pairs from the dialogue acts in a system turn.
+
+    Args:
+        dialogue_acts (dict): A dictionary containing the dialogue acts information from a system turn.
+        strip_domain (bool, optional): If True, remove the domain names from the act types. Defaults to False.
+
+    Returns:
+        act_type_slot_name_pairs (list[str]): A list of act_type-slot_name pairs as strings.
+        string_dialogue_acts (list[str]): A list of dialogue acts constructed from act_type_slot_name_pairs.
+
+    """
+    act_type_slot_name_pairs = []
+    dict_dialogue_acts = []
+
+    act_types = dialogue_acts['dialog_act']['act_type']
+    act_slots = dialogue_acts['dialog_act']['act_slots']
+
+    for act_type, act_slot in zip(act_types, act_slots):
+        if strip_domain:
+            act_type = '-'.join([x for x in act_type.split('-') if x not in DOMAIN_NAMES])
+
+        slot_names = act_slot['slot_name']
+        slot_values = act_slot['slot_value']
+
+        for slot_name, slot_value in zip(slot_names, slot_values):
+            if slot_name != 'none':
+                act_type_slot_name_pairs.append(f'{act_type}({slot_name})'.lower())
+                dict_dialogue_acts.append({act_type.lower(): {slot_name.lower(): slot_value}})
+            else:
+                act_type_slot_name_pairs.append(act_type.lower())
+                dict_dialogue_acts.append({act_type.lower(): None})
+
+    return act_type_slot_name_pairs, dict_dialogue_acts
 
 
-def save_data(data, f_name):
-    assert not os.path.exists(f"{f_name}.json"), f"{f_name}.json already exists."
-    with open(f"{f_name}.json", 'wb+') as f:
+def get_database_results(database: MultiWOZDatabase,
+                         belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Optional[List[Dict[str, str]]]]:
+    """
+    Get the database results for the current domain and belief state.
+
+    Args:
+        database (MultiWOZDatabase): The database instance used for querying.
+        belief_state (Dict[str, Dict[str, str]]): The current belief state.
+
+    Returns:
+        Dict[str, Optional[List[Dict[str, str]]]]:
+            A dictionary with domain as the key and an optional list of resulting database items as the value.
+            The list can be empty indicating that no database item matched the given domain state, and the
+            value None if the domain was not queried at all.
+    """
+    database_results = {}
+
+    for domain, domain_state in belief_state.items():
+        results = database.query(domain, domain_state)
+        database_results[domain] = results
+
+    return database_results
+
+
+def create_state_update(belief_state: Dict[str, Dict[str, str]],
+                        old_belief_state: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    """
+    Create a state update dictionary representing the difference between the current and old belief states.
+
+    Args:
+        belief_state (Dict[str, Dict[str, str]]): The current belief state dictionary.
+        old_belief_state (Dict[str, Dict[str, str]]): The old belief state dictionary.
+
+    Returns:
+        Dict[str, Dict[str, str]]: The state update dictionary with the same structure as the belief state,
+                                   containing the differences between the current and old belief states.
+                                   If there's no update for a particular slot, its value will be 'None'.
+    """
+    state_update = dict()
+
+    for domain, state in belief_state.items():
+        state_update[domain] = {}
+        for slot, value in state.items():
+            # Check if there's an update for the current slot
+            if slot not in old_belief_state.get(domain, {}) or old_belief_state[domain][slot] != value:
+                state_update[domain][slot] = value
+                logging.debug(f"Updating slot '{slot}' in domain '{domain}' with value '{value}'")
+            else:
+                state_update[domain][slot] = 'None'
+                logging.debug(f"No update for slot '{slot}' in domain '{domain}'")
+
+    return state_update
+
+
+def update_belief_state(belief_state: Dict[str, Dict[str, str]],
+                        frame: Dict[str, List],
+                        remove_domain: bool = True) -> Dict[str, Dict[str, str]]:
+    """
+    Updates the belief state based on the given frame.
+
+    Args:
+        belief_state (Dict[str, Dict[str, str]]): The current belief state.
+        frame (Dict[str, List]): A dictionary containing the domains and states for the current user turn.
+        remove_domain (bool, optional): Whether to remove the domain from the slots. Defaults to True.
+
+
+    Returns:
+        Dict[str, Dict[str, str]]: The updated belief state.
+    """
+    # Extract the domains and states from the frame
+    domains = frame['service']
+    states = frame['state']
+
+    # Iterate through each domain and state
+    for domain, state in zip(domains, states):
+        if domain not in belief_state:
+            continue
+
+        active_intent = state['active_intent']
+        requested_slots = ' '.join(sorted(state['requested_slots']))
+
+        # Extract the slot names and values from the state
+        slots = state['slots_values']['slots_values_name']
+        values = state['slots_values']['slots_values_list']
+
+        # Create a dictionary of slot-value pairs
+        slot_value_pairs = {slot.split('-')[-1] if remove_domain else slot: value[0] for slot, value in
+                            zip(slots, values)}
+
+        # Update the belief state with the new slot-value pairs, active intent and requested slots
+        belief_state[domain].update(slot_value_pairs)
+        belief_state[domain]['intent'] = active_intent
+        belief_state[domain]['requested'] = requested_slots if requested_slots else 'None'
+
+    return belief_state
+
+
+def load_data(file_path: Path) -> List[Dict[str, Any]]:
+    """
+    Load data from a JSON file.
+
+    Args:
+        file_path (Path): A pathlib.Path object representing the path to the JSON file.
+
+    Returns:
+        List[Dict[str, Any]]: A list of dictionaries containing the loaded data.
+
+    Raises:
+        FileNotFoundError: If the JSON file is not found at the specified path.
+    """
+
+    # Check if the JSON file exists
+    if file_path.with_suffix('.json').is_file():
+        logging.info(f"Loading data from {file_path.with_suffix('.json')}")
+
+        # Load data from the JSON file
+        with open(file_path.with_suffix('.json'), "rb") as f:
+            data = pickle.load(f)
+
+        return data
+    else:
+        raise FileNotFoundError(f"Data file not found at {file_path.with_suffix('.json')}")
+
+
+def save_data(data: list[[Dict]], file_path: Path, force: bool = False):
+    """
+        Save data to disk as both JSON and CSV files.
+
+        Args:
+            data (list[list[dict]]): A list of lists of dictionaries containing data to be saved.
+            file_path (Path): A pathlib.Path object representing the path to save the files to.
+            force (bool, optional): Whether to overwrite an existing file with the same path. Defaults to False.
+
+        Raises:
+            AssertionError: If the `file_path` already exists and `force` is False.
+
+        Returns:
+            None
+        """
+    if not force:
+        assert not file_path.exists(), f"{file_path} already exists."
+    with open(file_path.with_suffix('.json'), 'wb') as f:
         pickle.dump(data, f)
 
-    pd.DataFrame(data).to_csv(f"{f_name}.csv")
+    df = pd.DataFrame(data)
+    df.to_csv(file_path.with_suffix('.csv'), index=False)
 
 
-def parse_dialogue_into_examples(dialogue, context_len: int = None, strip_domain: bool = False) -> list[dict]:
+def parse_dialogue_into_examples(dialogue_id: int,
+                                 dialogue: Dict[str, Any],
+                                 dialogue_domain: str,
+                                 database: MultiWOZDatabase,
+                                 context_len: Optional[int] = None,
+                                 strip_domain: bool = False) -> List[Dict[str, Any]]:
     """
-    Parses a dialogue into a list of examples.
-    Each example is a dictionary of the following structure:
-    {
-        'context': list[str],  # list of utterances preceding the current utterance
-        'utterance': str,  # the string with the current user response
-        'delex_utterance': str,  # the string with the current user response which is delexicalized, i.e. slot
-                                values are
-                                # replaced by corresponding slot names in the text.
-        'belief_state': dict[str, dict[str, str]],  # belief state dictionary, for each domain a separate belief state dictionary,
-                                                    # choose a single slot value if more than one option is available
-        'database_results': dict[str, int] # dictionary containing the number of matching results per domain
-    }
-    The context can be truncated to k last utterances.
+    Parse a dialogue into training examples.
 
+    Args:
+        dialogue_id (int): The dialogue ID.
+        dialogue (Dict[str, Any]): The dialogue to be parsed.
+        dialogue_domain (str): The dialogue domain (e.g., 'restaurant', 'hotel', etc.).
+        database (MultiWOZDatabase): The database instance used for querying.
+        context_len (Optional[int], optional): The maximum length of the context. Defaults to None.
+        strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
 
-    Existing services:
-        {'hotel', 'restaurant', 'police', 'bus', 'train', 'attraction', 'hospital', 'taxi'}
-    Existing intents:
-        {'find_bus', 'find_train', 'find_restaurant', 'find_attraction', 'book_hotel', 'find_taxi',
-        'find_police', 'book_train', 'find_hotel', 'find_hospital', 'book_restaurant'}
-    Existing slots_values_names:
-        {'bus-departure', 'hotel-pricerange', 'train-departure', 'hotel-bookstay', 'hotel-bookday',
-        'restaurant-bookpeople', 'restaurant-booktime', 'restaurant-pricerange', 'attraction-type',
-        'restaurant-name', 'bus-destination', 'train-bookpeople', 'hotel-area', 'taxi-departure',
-        'taxi-destination', 'attraction-area', 'attraction-name', 'restaurant-area', 'taxi-arriveby',
-        'hotel-stars', 'restaurant-bookday', 'taxi-leaveat', 'hotel-bookpeople', 'restaurant-food',
-        'train-destination', 'hospital-department', 'hotel-parking', 'hotel-type', 'train-leaveat',
-        'bus-leaveat', 'train-day', 'hotel-name', 'hotel-internet', 'train-arriveby', 'bus-day'}
+    Returns:
+        List[Dict[str, Any]]: A list of training examples.
     """
 
     examples = []
@@ -129,6 +236,7 @@ def parse_dialogue_into_examples(dialogue, context_len: int = None, strip_domain
 
     example = dict()
     belief_state = {domain: {slot: 'None' for slot in DOMAIN_SLOTS[domain]} for domain in DOMAIN_NAMES}
+
     for turn_id, _ in enumerate(turns['turn_id']):
         speaker = turns['speaker'][turn_id]
         utterance = turns['utterance'][turn_id]
@@ -141,39 +249,32 @@ def parse_dialogue_into_examples(dialogue, context_len: int = None, strip_domain
             example = {
                 'utterance': utterance,
                 'old_belief_state': copy.deepcopy(belief_state),
+                'domain': dialogue_domain,
+                'dialogue_id': dialogue_id,
+                'user_turn_id': turn_id,
             }
+
+            # Update the belief state based on the user's utterance
             frame = turns['frames'][turn_id]
-            domains = frame['service']
-            states = frame['state']
+            belief_state = update_belief_state(belief_state, frame)
 
-            for domain, state in zip(domains, states):
-                slots = state['slots_values']['slots_values_name']
-                values = state['slots_values']['slots_values_list']
+            # Create a state update by comparing the old and new belief states
+            # state_update = create_state_update(belief_state, example['old_belief_state'])
 
-                slot_value_pairs = {slot: value[0] for slot, value in zip(slots, values)}
-                belief_state[domain].update(slot_value_pairs)
-
-            # From the USER we use:
-            #   - 'utterance': what the user said in the current turn
-            #   - 'belief_state': the belief state of the user side of the conversation
-            example.update({'new_belief_state': copy.deepcopy(belief_state)})
+            # Get the database results for the updated belief state
+            database_results = get_database_results(database, belief_state)
+            example.update({
+                'new_belief_state': copy.deepcopy(belief_state),
+                'database_results': database_results
+            })
 
         # SYSTEM
         else:
             dialogue_acts = turns['dialogue_acts'][turn_id]
-            act_type_slot_name_pairs = []
-            act_types = dialogue_acts['dialog_act']['act_type']
-            act_slots = dialogue_acts['dialog_act']['act_slots']
-            for act_type, act_slot in zip(act_types, act_slots):
-                if strip_domain:
-                    act_type = '-'.join([x for x in act_type.split('-') if x not in DOMAIN_NAMES])
 
-                slot_names = act_slot['slot_name']
-                slot_values = act_slot['slot_value']
-
-                for slot_name in slot_names:
-                    act_type_slot_name_pairs.append(f'{act_type}{"-" if slot_name != "none" else ""}'
-                                                    f'{slot_name if slot_name != "none" else ""}')
+            # Extract action types and slot names from the dialogue acts
+            act_type_slot_name_pairs, string_dialogue_acts = extract_act_type_slot_name_pairs(dialogue_acts,
+                                                                                              strip_domain=strip_domain)
 
             context = turns['utterance'][:turn_id - 1]
             if context_len is not None and len(context) > context_len:
@@ -182,62 +283,103 @@ def parse_dialogue_into_examples(dialogue, context_len: int = None, strip_domain
 
                 else:
                     context = []
-            # From the SYSTEM we use:
-            #   - 'context': the last `context_len` turns of the dialogue ending with the last system utterance.
-            #                context together with user utterance and their belief state create input to the model
-            #   - 'actions': the goal actions the model should predict from the input. It represents the SYSTEM's
-            #                decision of what to do next
-            #   - 'system_utterance': the SYSTEM's response based on the 'actions'. This is not used in our model in
-            #                         any way, but it's a good idea to store it as well for manual control.
+
+            # Update the example dictionary with the new information
             example.update({
                 'context': context,
-                'actions': list(set(act_type_slot_name_pairs)),
+                'actions': sorted(list(set(act_type_slot_name_pairs))),
+                'dialogue_acts': string_dialogue_acts,
                 'system_utterance': utterance,
+                'system_turn_id': turn_id,
             })
             examples.append(example)
 
     return examples
 
 
-def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len=None,
-                          cache_dir="/home/safar/HCN/huggingface_dataset") -> pd.DataFrame:
+def load_multiwoz_dataset(split: str,
+                          database: MultiWOZDatabase,
+                          domains: List[str] = None,
+                          context_len: int = 1,
+                          only_single_domain: bool = False,
+                          root_cache_path: Union[Path, str] = "data/huggingface_data",
+                          strip_domain: bool = False) -> pd.DataFrame:
     """
-    Load the MultiWoz dataset using huggingface.datasets.
-    Able to shorten the context length by setting context_len.
+    Load and preprocess the MultiWOZ 2.2 dataset using the HuggingFace datasets library.
+
+    Args:
+        split (str): Which subset of the dataset to load (train, test, or validation).
+        database (MultiWOZDatabase): The database with the query method.
+        domains (List[str], optional): A list of domains to include in the dataset. If None or empty, all domains are included.
+        context_len (int, optional): The maximum length of the conversation history to keep for each example.
+        only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+        root_cache_path (Union[Path, str], optional): The path to the directory where the preprocessed cahed data will be saved.
+        strip_domain (bool, optional): Whether to remove domain prefixes from slot names in the dataset.
+
+    Returns:
+        pd.DataFrame: A Pandas DataFrame containing the preprocessed dataset.
+
+    Raises:
+        FileNotFoundError: If the MultiWOZDatabase cannot be found at the specified path.
     """
+    logging.info(f"Loading MultiWOZ dataset, split={split}, domains={domains}, context_len={context_len}, "
+                 f"only_single_domain={only_single_domain}, data_path={root_cache_path}")
 
-    cache_dir = Path(cache_dir)
-    print(f"Cache dir = {Path(cache_dir).absolute()}")
+    if not domains:
+        # If no domains are specified, we use all of them
+        domains = list(DOMAIN_NAMES)
+        logging.debug(f"Using all domains: {domains}")
 
-    # Create cache dir if it doesn't exist
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
-
-    if domains is None:
-        domains = []
+    # Sort domains to always get the same order of in the paths and file names below
     domains.sort()
 
-    f_name = os.path.join(cache_dir, f"{split}_preprocessed_data_{'-'.join(domains)}")
+    # Create cache directory path from data path
+    cache_path = Path(root_cache_path) / "cache"
+    cache_path = cache_path / (
+                '-'.join(domains) + f"_only-single-domain_{only_single_domain}_context-len_{context_len}")
 
+    # Create cache directory if it doesn't exist
+    cache_path.mkdir(exist_ok=True, parents=True)
+
+    # Create file path for current split (train/test/val)
+    file_path = cache_path / f"{split}_preprocessed_data_{'-'.join(domains)}"
+
+    # Turn list of domains into a set to be used in subset queries in filtering dialogues containing only these domains
     domains = set(domains)
 
     # If the dataset has already been preprocessed, load it from the cache
-    if os.path.isfile(f"{f_name}.json"):
-        data = pickle.load(open(f"{f_name}.json", 'rb'))
-        print(f"Loaded {len(data)} examples from cached file.")
+    if file_path.with_suffix('.json').is_file():
+        logging.info(f"Loading {split} from cached file.")
+        data = load_data(file_path)
 
+    # Else, load MultiWoz 2.2 dataset from HuggingFace, create data and save them into a cache directory
     else:
-        multi_woz_dataset = datasets.load_dataset(path='multi_woz_v22', split=split, ignore_verifications=True,
+        # Load MultiWoz dataset from HuggingFace
+        logging.info(f"Preprocessing {split} data and saving it to {file_path}.")
+        multi_woz_dataset = datasets.load_dataset(path='multi_woz_v22', split=split, verification_mode='no_checks',
                                                   streaming=True)
+
         data = []
-        for idx, dialogue in enumerate(multi_woz_dataset):
-            if idx % 500 == 0:
-                print(f"Processing dialogue {idx + 1}")
+        # Iterate through dialogues in the dataset, preprocessing each dialogue
+        for dialogue_id, dialogue in tqdm(enumerate(multi_woz_dataset), desc=f"Preprocessing {split} data",
+                                          unit="dialogue", ncols=100):
+            if only_single_domain and len(dialogue['services']) != 1:
+                continue
 
-            if not domains or set(dialogue['services']).issubset(domains):
-                data.extend(parse_dialogue_into_examples(dialogue, context_len=context_len))
+            # Use only those dialogues containing allowed domains and parse them into examples
+            if not set(dialogue['services']).issubset(domains):
+                continue
 
-        save_data(data, f_name)
+            if len(dialogue['services']) > 0:
+                dialogue_domain = dialogue['services'][0]
+            else:
+                dialogue_domain = ''
+
+            data.extend(
+                parse_dialogue_into_examples(dialogue_id, dialogue, dialogue_domain=dialogue_domain, database=database,
+                                             context_len=context_len, strip_domain=strip_domain))
+
+        save_data(data, file_path)
 
     df = pd.DataFrame(data)
     df.dropna(inplace=True)
@@ -245,292 +387,682 @@ def load_multiwoz_dataset(split: str, domains: List[str] = None, context_len=Non
     return df
 
 
-def belief_state_to_str(belief_state: dict[str, dict[str, str]]) -> str:
-    result = '{'
-    for domain, slot_values in belief_state.items():
-        slot_values_str = ','.join(f" {slot} : {value} " for slot, value in slot_values.items() if value != "None")
+def belief_state_to_str(belief_state: Dict[str, Dict[str, str]]) -> str:
+    result = ''
+    for domain, slot_values in sorted(belief_state.items()):
+        if slot_values is None:
+            continue
+        slot_values_str = ', '.join(
+            f"{slot}: {value}" for slot, value in sorted(slot_values.items()) if value != "None")
         if slot_values_str:
-            result += f" {domain} {'{'}{slot_values_str}{'}'}"
-
-    result += ' }'
-    return result
+            result += f"{domain} - {slot_values_str}; "
+    return result.rstrip('; ')  # remove the last semicolon and space
 
 
-class DataModule:
+def str_to_belief_state(belief_state_str: str, include_none_values: bool = False) -> Dict[str, Dict[str, str]]:
+    # Initialize the belief state
+    belief_state = {}
+
+    # Split the belief state string into domain sections
+    domain_sections = re.split(r';\s*', belief_state_str.strip())
+    for domain_section in domain_sections:
+        try:
+            # Split the domain section into domain name and slots_values_str
+            domain_name, slots_values_str = domain_section.split(' - ')
+
+            # Ensure the domain name is recognized
+            if domain_name not in DOMAIN_NAMES:
+                continue
+
+            # Split slots_values_str into slot-value pairs
+            slot_value_pairs = re.split(r',\s*', slots_values_str.strip())
+            for slot_value_pair in slot_value_pairs:
+                # Split slot_value_pair into slot and value
+                slot, value = slot_value_pair.split(': ')
+
+                # Ensure the slot is recognized for this domain
+                if slot not in DOMAIN_SLOTS[domain_name]:
+                    continue
+
+                # If we're not including "None" values and the value is "None", skip this slot
+                if not include_none_values and value.lower() == "none":
+                    continue
+
+                # Use setdefault to initialize the domain and slot in the belief state, and update the value
+                belief_state.setdefault(domain_name, {}).setdefault(slot, value)
+
+        except ValueError:
+            # This occurs if domain_section or slot_value_pair could not be split correctly
+            logging.debug(f"Could not parse domain section: {domain_section}")
+
+    # If including "None" values, ensure that all domain-slot pairs exist in the belief state
+    if include_none_values:
+        for domain, slots in DOMAIN_SLOTS.items():
+            for slot in slots:
+                belief_state.setdefault(domain, {}).setdefault(slot, "None")
+
+    return belief_state
+
+
+def database_results_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]], threshold: int = 5) -> str:
+    result = ''
+    for domain, result_list in database_results.items():
+        if result_list is None:
+            continue
+        elif not result_list:
+            result_list_str = "[]"
+        else:
+            if len(result_list) > threshold:
+                result_list = random.sample(result_list, threshold)
+
+            result_list_str = ', '.join(
+                '{' + ','.join(f"{slot}: {value}" for slot, value in dict_element.items()) + '}'
+                for dict_element in result_list)
+
+        result += f"{domain} - {result_list_str}; "
+
+    result += '}'
+    return result.rstrip('; ')  # remove the last semicolon and space
+
+
+def database_results_count_to_str(database_results: Dict[str, Optional[List[Dict[str, str]]]]) -> str:
+    result = ''
+    for domain, result_list in sorted(database_results.items()):
+        if result_list is not None:
+            result += f"{domain} - {len(result_list)}; "
+
+    return result.rstrip('; ')  # remove the last semicolon and space
+
+
+def action_list_to_str(action_list: List[str]) -> str:
+    # Create a dictionary to group actions by domain
+    domain_actions = defaultdict(list)
+
+    # Iterate over each action in the list
+    for action in action_list:
+        # Split the action into domain and slot (if applicable)
+        domain, actions = action.split('-')
+
+        # Append the formatted action to the domain's list
+        domain_actions[domain].append(f'{actions}')
+
+    # Generate the final string representation using dictionary and list comprehensions
+    string_repr = '; '.join(
+        f'{domain} - {", ".join(sorted(actions))}' for domain, actions in sorted(domain_actions.items()))
+    return string_repr
+
+
+def str_to_action_list(action_str: str) -> List[str]:
+    # Split the input string into individual domain-action strings
+    domain_action_strs = action_str.split(';')
+
+    # Initialize an empty list to hold the actions
+    action_list = []
+
+    # Iterate over each domain-action string
+    for domain_action_str in domain_action_strs:
+        try:
+            # Split the domain-action string into domain and action string
+            domain, action_str = domain_action_str.split(' - ')
+
+            # Split the action string into individual actions
+            actions = action_str.split(', ')
+
+            # Iterate over each action
+            for action in actions:
+                # Format the action
+                formatted_action = f'{domain}-{action}'
+
+                # Check if the action is in the set of all possible actions
+                if formatted_action in UNIQUE_ACTIONS:
+                    # If it is, add it to the list of actions
+                    action_list.append(formatted_action)
+        except ValueError:
+            # This occurs if domain_action_str could not be split correctly
+            logging.debug(f"Could not parse domain-action string: {domain_action_str} in input string {action_str}")
+
+    return action_list
+
+
+class MultiWOZDatasetActionsClassification:
     def __init__(self,
                  tokenizer_name: str,
-                 label_column: str,
-                 use_columns: List[str],
                  context_len: int = 1,
                  max_seq_length: int = None,
-                 val_size: float = 0.3,
                  additional_special_tokens: List[str] = None,
-                 cache_dir: str = "../huggingface_dataset",
-                 domains: List[str] = None
-                 ):
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False,
+                 min_action_support: int = 5,
+                 subset_size: float = 0.3):
+        """
+        Initialize the MultiWOZDataset class.
+
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_seq_length (int, optional): The maximum sequence length for tokenized input.
+            additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
+            min_action_support (int, optional): Set the minimum action support size to consider that action in train data
+
+        """
         super().__init__()
         self.tokenizer_name = tokenizer_name
-        self.label_column = label_column
-        self.use_columns = use_columns
         self.max_seq_length = max_seq_length
         self.context_len = context_len
-        self.val_size = val_size
         self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
+        self.min_action_support = min_action_support  # set min action support
 
         # Initialize pretrained tokenizer and register all the special tokens
         self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True,
                                                        additional_special_tokens=additional_special_tokens)
 
-        print(f"Special tokens: {self.tokenizer.additional_special_tokens}")
-        print(f"Domains: {self.domains}")
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
 
         # Load train/val/test datasets into DataFrames
-        train_df = load_multiwoz_dataset('train', context_len=self.context_len, cache_dir=cache_dir, domains=domains)
-        val_df = load_multiwoz_dataset('validation', context_len=self.context_len, cache_dir=cache_dir, domains=domains)
-        test_df = load_multiwoz_dataset('test', context_len=self.context_len, cache_dir=cache_dir, domains=domains)
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
-        # Gather unique labels which are used in 'label' <-> 'integers' map
-        unique_actions = sorted(list(set([action for example in train_df['actions'].to_list() for action in example])))
+        old_train_df = train_df
 
-        # The 'label' <-> 'integers' map is saved into 'label2id' and 'id2label' dictionaries and saved as a part
-        # of the model in model config file.
-        self.label2id = {'<UNK_ACT>': 0}
-        self.label2id.update({v: k for k, v in enumerate(unique_actions, start=1)})
-        self.id2label = {v: k for k, v in self.label2id.items()}
-        self.num_labels = len(self.label2id)
-        print(f"Labels are: \n {self.label2id.keys()}")
-        print(f"Number of labels is: {self.num_labels}")
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name}")
+        logging.info(f"Special tokens: {self.tokenizer.additional_special_tokens}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Create actions, count their support and filter the actions that have low support.
+        #   Count the occurrence of each action
+        action_counts = collections.Counter([action for example in train_df['actions'].to_list() for action in example])
+
+        #   Create a DataFrame from the action_counts dictionary
+        actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
+        actions_df['supported'] = actions_df['support'] >= self.min_action_support
+        actions_df = actions_df.sort_values(by='support', ascending=False)
+
+        #   Specify the file path and save the DataFrame as CSV
+        # actions_path = Path(root_cache_path) / "action_supports.csv"
+        # actions_df.to_csv(actions_path, index=False)
+
+        #   Filter out actions with support less than the threshold
+        supported_actions = actions_df[actions_df['supported']]['action'].tolist()
+
+        # Initialize LabelEncoder and fit it with the supported actions
+        self.label_encoder = LabelEncoder()
+        self.label_encoder.fit([UNK_ACTION] + supported_actions)
+
+        # Get the number of unique labels
+        self.num_labels = len(self.label_encoder.classes_)
+        logging.debug(f"Labels are: \n {self.label_encoder.classes_}")
+        logging.info(f"Number of labels is: {self.num_labels}")
 
         # Create HuggingFace datasets
         train_dataset = self.create_huggingface_dataset(train_df)
         val_dataset = self.create_huggingface_dataset(val_df)
         test_dataset = self.create_huggingface_dataset(test_df)
 
-        # Create datasets dictionary
+        # Create dataset dictionary
         self.dataset = datasets.DatasetDict({
             'train': train_dataset,
             'test': test_dataset,
             'val': val_dataset}
         )
 
-    def create_huggingface_dataset(self, df: pd.DataFrame, batch_size: int = 32) -> datasets.Dataset:
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
         """
         Creates HuggingFace dataset from pandas DataFrame
         :param df: input DataFrame
-        :param batch_size:
         :return: output HuggingFace dataset
         """
         # Create HuggingFace dataset from Dataset
         dataset = datasets.Dataset.from_pandas(df)
 
-        # Map dataset using the 'tokenize_function'
-        dataset = dataset.map(self.tokenize_function, batched=True, batch_size=batch_size)
-
-        dataset = dataset.map(self.cast_labels, batched=True, batch_size=batch_size)
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
 
         return dataset
 
-    def tokenize_function(self, example_batch):
+    def tokenize_and_cast_function(self,
+                                   example_batch: Dict[str, Any]) -> Dict[str, Union[List[str], List[int], np.ndarray]]:
         """
-        This function prepares each batch for input into the transformer by tokenizing the text, mapping the
-        tokenized text into numbers, and adding new arguments with the necessary tensors for input into the model.
-        :param example_batch: batch
-        :return: augmented batch with added features
+        Tokenizes the input text and casts string labels (action names) into boolean vectors.
+
+        Args:
+            example_batch (Dict[str, Any]): A dictionary where each key is a column name and each value corresponds
+                to the values of that column for all examples in the batch.
+
+        Returns: Dict[str, Union[List[str], List[int], np.ndarray]]: A dictionary where each key is a feature name
+         and each value corresponds to the values of that feature for all examples in the batch. The returned
+         dictionary includes tokenized features ('input_ids', 'token_type_ids', 'attention_mask') and labels in binary
+         array format.
         """
-        belief_states = [belief_state_to_str(bs) for bs in example_batch['old_belief_state']]
+        utterances = example_batch['utterance']
+
+        # Convert the belief states in the example batch into string format.
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+
+        # Convert the database_results in the example batch into string format and also string with counts
+        # database_results = list(map(database_results_to_str, example_batch['database_results']))
+        database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
+
+        # Convert the contexts in the example batch into string format, with elements joined by the separator token.
         contexts = list(map(lambda x: self.tokenizer.sep_token.join(x), example_batch['context']))
-        texts = [BELIEF + ' ' + belief + ' ' + CONTEXT + ' ' + context + ' ' + USER + ' ' + user_utter
-                 for belief, context, user_utter in zip(belief_states, contexts, example_batch['utterance'])]
-        example_batch['text'] = texts
-        tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length)
-        return tokenized
 
-    def map_labels_to_ids(self, actions: list[str]) -> list[int]:
-        output = [self.label2id.get(a, 0) for a in actions]
-        return output
+        # Combine the belief states, database_results, database_results_count, contexts, and user utterances into
+        # a single string for each example in the batch.
+        texts = list(map(lambda belief, context, user_utter, db_results_count:
+                         STATE_CLA + ' ' + belief + '. '
+                         + CONTEXT_CLA + ' ' + context + '. ' + USER + ' ' + user_utter + '. ' +
+                         DATABASE_COUNTS + ' ' + db_results_count,
+                         new_belief_states, contexts, utterances, database_results_count))
 
-    def cast_labels(self, example_batch):
+        # Use the tokenizer to convert these strings into a format suitable for model input
+        tokenized = self.tokenizer(texts, padding='max_length', truncation=True, max_length=self.max_seq_length,
+                                   return_tensors='pt')
+
+        # Check if any input texts were truncated
+        truncated_texts = [len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_seq_length for text in
+                           texts]
+        num_truncated = sum(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+
+        # Cast action labels to binary arrays.
+        # Create a binary array where each row corresponds to an example,
+        # and each column corresponds to a unique action.
         labels = np.zeros((len(example_batch['actions']), self.num_labels))
         for idx, action_list in enumerate(example_batch['actions']):
-            action_ids = self.map_labels_to_ids(action_list)
+            # Convert the action labels into their corresponding indices.
+            action_ids = self.map_labels_to_ids(action_list, filter_unseen=True)
+            # For each action label, set the corresponding cell in the binary array to 1.
             labels[idx, action_ids] = 1.
 
-        return {'label': labels}
+        # Add tokenized features and labels to the output dictionary.
+        tokenized['label'] = labels
+        tokenized['text'] = texts
+
+        return tokenized
+
+    def map_labels_to_ids(self, actions: List[str], filter_unseen: bool = False) -> List[int]:
+        """
+        Maps action labels to their corresponding integer IDs.
+
+        Args:
+            actions (List[str]): A list of action labels.
+            filter_unseen (bool): If True, unseen actions are filtered out. If False, unseen actions are replaced with UNK_ACTION.
+
+        Returns:
+            List[int]: A list of integer IDs corresponding to the input action labels.
+        """
+        actions_set = set(actions)
+        unseen_actions = actions_set.difference(self.label_encoder.classes_)
+
+        if filter_unseen:
+            # Filter out unseen actions
+            actions = [action for action in actions if action not in unseen_actions]
+        else:
+            # Replace unseen actions with UNK_ACTION
+            actions = [UNK_ACTION if action in unseen_actions else action for action in actions]
+
+        # Now we know that all actions are in classes_, so we can call transform safely
+        action_ids = self.label_encoder.transform(actions)
+
+        return action_ids.tolist()
+
+    def get_id2label(self) -> Dict[int, str]:
+        return {i: label for i, label in enumerate(self.label_encoder.classes_)}
+
+    def get_label2id(self) -> Dict[str, int]:
+        return {label: i for i, label in enumerate(self.label_encoder.classes_)}
 
 
-if __name__ == '__main__':
-    print(f"CREATING DATASET...")
-    """
-    print(f"\t LOADING TRAIN DATA FROM \'{args.train_data}\'...\n"
-          f"\t LOADING VAL DATA FROM \'{args.val_data}\'...\n"
-          f"\t LOADING TEST DATA FROM \'{args.test_data}\'...\n"
-          f"\t LOADING TOKENIZER FROM \'{args.pretrained_model}\'...\n")
-    """
-    special_tokens = [BELIEF, CONTEXT, USER]
-    dm = DataModule(tokenizer_name=args.tokenizer_name,
-                    label_column='actions',
-                    use_columns=['actions', 'utterance'],
-                    max_seq_length=args.max_seq_length,
-                    additional_special_tokens=special_tokens,
-                    cache_dir=args.cache_dir,
-                    domains=args.domains)
+class MultiWOZDatasetBeliefUpdate:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_source_length: int = None,
+                 max_target_length: int = None,
+                 additional_special_tokens: List[str] = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False,
+                 subset_size: float = 0.3):
+        """
+        Initialize the MultiWOZDataset class.
 
-    print("DATASET CREATED!")
-    print(f"{50 * '='}")
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_source_length (int, optional): The maximum sequence length for tokenized input.
+            max_target_length (int, optional): The maximum sequence length for the output.
+            additional_special_tokens (List[str], optional): A list of additional special tokens to use with the tokenizer.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
 
-    model_type = args.pretrained_model
-    run_name = f"{model_type}_{datetime.now().strftime('%y%m%d-%H%M%S')}"
-    output_dir = Path(args.save_folder) / model_type / run_name
-    if args.train_model:
-        print(f"TRAINING A NEW MODEL USING \'{args.pretrained_model}\'...")
+        """
+        super().__init__()
+        self.tokenizer_name = tokenizer_name
+        self.max_source_length = max_source_length
+        self.max_target_length = max_target_length
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
 
-        # Create TrainingArguments to access all the points of customization for the training.
-        training_args = TrainingArguments(
-            run_name=run_name,
-            output_dir=output_dir,
-            overwrite_output_dir=True,
-            do_train=True,
-            do_eval=True,
-            per_device_train_batch_size=args.batch_size,
-            per_device_eval_batch_size=args.batch_size,
-            evaluation_strategy='epoch',
-            logging_strategy='epoch',
-            logging_dir=Path('logdir') / run_name,
-            learning_rate=args.learning_rate,
-            weight_decay=0,
-            adam_epsilon=1e-8,
-            max_grad_norm=1.0,
-            num_train_epochs=args.epochs,
-            save_strategy='epoch',
-            load_best_model_at_end=True,
-            metric_for_best_model='f1',
-            save_total_limit=1,
-            warmup_steps=300,
+        # Initialize pretrained tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
+
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
+
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+
+        old_train_df = train_df
+
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Create HuggingFace datasets
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
+        test_dataset = self.create_huggingface_dataset(test_df)
+
+        # Log number of truncated input and output examples
+        logging.info(f"Truncated inputs: {TRUNCATED_INPUTS}, truncated outputs: {TRUNCATED_OUTPUTS}")
+
+        # Create dataset dictionary
+        self.dataset = datasets.DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset,
+            'val': val_dataset}
         )
-        # Load pretrained model
-        model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_model,
-                                                                   num_labels=dm.num_labels,
-                                                                   id2label=dm.id2label,
-                                                                   label2id=dm.label2id,
-                                                                   problem_type="multi_label_classification").to(device)
 
-        model.resize_token_embeddings(len(dm.tokenizer))
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
+        """
+        Creates HuggingFace dataset from pandas DataFrame
+        :param df: input DataFrame
+        :return: output HuggingFace dataset
+        """
+        # Create HuggingFace dataset from Dataset
+        dataset = datasets.Dataset.from_pandas(df)
 
-        # Prepare model for training, i.e. this command does not train the model.
-        model.train()
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
 
-        # Create HuggingFace Trainer, which provides an API for feature-complete training in PyTorch for most
-        # standard use cases. The API supports distributed training on multiple GPUs/TPUs, mixed precision through
-        # NVIDIA Apex and Native AMP for PyTorch. The Trainer contains the basic training loop which supports the
-        # above features.
-        trainer = Trainer(model=model,
-                          args=training_args,
-                          train_dataset=dm.dataset['train'],
-                          eval_dataset=dm.dataset['val'],
-                          compute_metrics=compute_metrics,
-                          callbacks=[EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)])
+        return dataset
 
-        # Train our model using the trainer and save it after the training is complete.
-        trainer.train()
-        trainer.save_model()
-        print("TRAINING A NEW MODEL DONE!")
-        print(f"{50 * '='}")
+    def tokenize_and_cast_function(self,
+                                   example_batch: Dict[str, Any]) -> Dict[str, Union[List[str], List[int], np.ndarray]]:
+        global TRUNCATED_INPUTS, TRUNCATED_OUTPUTS
 
-    # =========================================================================================
-    # Load model and create predictions
-    if args.train_model:
-        model = AutoModelForSequenceClassification.from_pretrained(output_dir).to(device)
-        report_dir = output_dir
-    else:
-        model = AutoModelForSequenceClassification.from_pretrained(args.pretrained_model).to(device)
-        report_dir = Path(args.pretrained_model)
+        utterances = example_batch['utterance']
 
-    print(f"EVALUATING MODEL {report_dir}:")
+        old_belief_states = list(map(belief_state_to_str, example_batch['old_belief_state']))
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
 
-    model.eval()
+        separator = CONTEXT_SEP
+        contexts = list(map(lambda x: separator.join(x), example_batch['context']))
 
-    # TODO: top_k set to what value? len(dm.label2id) is more than 200 and we don't want that, too long processing
-    classifier_pipeline = pipelines.pipeline(task='text-classification', model=model, tokenizer=dm.tokenizer,
-                                             top_k=5,
-                                             device=0 if torch.cuda.is_available() else -1)
+        texts = list(map(lambda belief, context, user_utter:
+                         TASK_DESCRIPTION_STATE_UPDATE + ' ' + STATE_GEN + ' ' + belief + '. '
+                         + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter,
+                         old_belief_states, contexts, utterances))
 
-    for dataset_name, dataset_data in dm.dataset.items():
-        print(f"EVALUATING MODEL ON {dataset_name}...")
-        output_df = dataset_data.to_pandas()
-        eval_start_time = time.time()
-        predictions = classifier_pipeline(KeyDataset(dataset_data, 'text'))
+        tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
+                                          max_length=self.max_source_length, return_tensors="pt")
 
-        print(f"Predictions using model pipeline computed in {time.time() - eval_start_time} -> "
-              f"Compare with true labels...")
-        comparing_start_time = time.time()
+        tokenized_outputs = self.tokenizer(new_belief_states, padding='max_length', truncation=True,
+                                           max_length=self.max_target_length, return_tensors="pt")
 
-        predicted_labels = []
-        y_pred = np.zeros((len(predictions), len(dm.label2id)), dtype='bool')
-        y_true = np.array(dataset_data['label'])
+        # Check if any input texts were truncated
+        truncated_texts = [text for text in texts if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_INPUTS += num_truncated
 
-        predictions_times = []
-        for i, prediction in tqdm(enumerate(predictions), total=len(predictions)):
-            # i-th `prediction` is a model output for the i-th input dialogue.
-            # It is a list of dict items with the following format:
-            #   - len: number of predicted actions - top_k in the pipeline
-            #   - elements: dict with the following key-value pairs:
-            #       - prediction['label']: action name
-            #       - prediction['score']: probability of this action
-            prediction_start_time = time.time()
-            labels = []
-            labels_ids = []
-            for pred in prediction:
-                score = round(pred['score'], 4)
-                action = pred['label']
-                if score >= 0.5:
-                    labels.append(action)
-                    labels_ids.append(dm.label2id[action])
+        # Check if any output texts were truncated
+        truncated_texts = [text for text in new_belief_states if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_OUTPUTS += num_truncated
 
-            predicted_labels.append(labels)
-            y_pred[i, labels_ids] = 1
-            predictions_times.append(time.time() - prediction_start_time)
+        # Get labels
+        labels = tokenized_outputs['input_ids']
 
-        print(f"Compare with true labels done in: {time.time() - comparing_start_time}\n"
-              f"Average time for one prediction is: {np.mean(predictions_times)}.")
+        # Replace padding token id's of the labels by -100, so it's ignored by the loss
+        labels[labels == self.tokenizer.pad_token_id] = -100
 
-        y_pred = y_pred.astype('float')
-        output_df['predicted'] = predicted_labels
-        output_df['scores'] = predictions
-        output_df = output_df[['text', 'actions', 'predicted', 'system_utterance', 'scores']]
+        return {
+            'input_ids': tokenized_inputs['input_ids'],
+            'attention_mask': tokenized_inputs['attention_mask'],
+            'labels': labels,
+        }
 
-        os.makedirs(report_dir, exist_ok=True)
-        output_df.to_csv(report_dir / f'{dataset_name}_predictions.csv')
 
-        # =========================================================================================
-        # Evaluate model
+class MultiWOZDatasetActionGeneration:
+    def __init__(self,
+                 tokenizer_name: str,
+                 context_len: int = 1,
+                 max_source_length: int = None,
+                 max_target_length: int = None,
+                 root_cache_path: Union[str, Path] = "../huggingface_data",
+                 root_database_path: Union[str, Path] = "../huggingface_data",
+                 domains: List[str] = None,
+                 only_single_domain: bool = False,
+                 batch_size: int = 32,
+                 strip_domain: bool = False,
+                 min_action_support: int = 10,
+                 subset_size: float = 0.3):
+        """
+        Initialize the MultiWOZDataset class.
 
-        actions_recall = recall_score(y_true=y_true, y_pred=y_pred, average=None)
-        weighted_recall = recall_score(y_true=y_true, y_pred=y_pred, average='weighted')
-        macro_recall = recall_score(y_true=y_true, y_pred=y_pred, average='macro')
-        recall = {'metric': 'recall', 'macro': round(macro_recall, 4), 'weighted': round(weighted_recall, 4)} | \
-                 {action: round(actions_recall[i], 4) for i, action in dm.id2label.items()}
+        Args:
+            tokenizer_name (str): The name of the tokenizer to use.
+            context_len (int, optional): The maximum length of the conversation history to keep for each example.
+            max_source_length (int, optional): The maximum sequence length for tokenized input.
+            max_target_length (int, optional): The maximum sequence length for the output.
+            root_cache_path (str, Path, optional): The path to the directory where the preprocessed cached data will be saved.
+            root_database_path (str, Path, optional): The path to the directory where the database is saved.
+            domains (List[str], optional): A list of domains to include in the dataset. If None, all domains are included.
+            only_single_domain (bool, optional): Whether to include only dialogues with a single domain (if True).
+            batch_size (int, optional): The batch size to use when processing the dataset.
+            strip_domain (bool, optional): Whether to remove the domain from the action. Defaults to False.
 
-        actions_precision = precision_score(y_true=y_true, y_pred=y_pred, average=None)
-        weighted_precision = precision_score(y_true=y_true, y_pred=y_pred, average='weighted')
-        macro_precision = precision_score(y_true=y_true, y_pred=y_pred, average='macro')
-        precision = {'metric': 'precision', 'macro': round(macro_precision, 4),
-                     'weighted': round(weighted_precision, 4)} | \
-                    {action: round(actions_precision[i], 4) for i, action in dm.id2label.items()}
+        """
+        super().__init__()
+        self.tokenizer_name = tokenizer_name
+        self.max_source_length = max_source_length
+        self.max_target_length = max_target_length
+        self.context_len = context_len
+        self.domains = domains
+        self.only_single_domain = only_single_domain
+        self.batch_size = batch_size
+        self.min_action_support = min_action_support
 
-        actions_f1 = f1_score(y_true=y_true, y_pred=y_pred, average=None)
-        weighted_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
-        macro_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='macro')
-        f1 = {'metric': 'f1', 'macro': round(macro_f1, 4), 'weighted': round(weighted_f1, 4)} | \
-             {action: round(actions_f1[i], 4) for i, action in dm.id2label.items()}
+        # Initialize pretrained tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name, use_fast=True)
 
-        accuracy = {'metric': 'accuracy', 'macro': round(accuracy_score(y_true=y_true, y_pred=y_pred), 4)}
+        # Load MultiWoz Database, which is locally saved at database_path
+        database_path = Path(root_database_path) / "database"
+        self.database = MultiWOZDatabase(database_path)
 
-        metrics_df = pd.DataFrame([accuracy, recall, precision, f1])
-        print(metrics_df)
-        metrics_df.to_csv(report_dir / f'{dataset_name}_metrics.csv')
+        # Load train/val/test datasets into DataFrames
+        train_df = load_multiwoz_dataset('train', database=self.database, context_len=self.context_len,
+                                         root_cache_path=root_cache_path, domains=domains,
+                                         only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        val_df = load_multiwoz_dataset('validation', database=self.database, context_len=self.context_len,
+                                       root_cache_path=root_cache_path, domains=domains,
+                                       only_single_domain=self.only_single_domain, strip_domain=strip_domain)
+        test_df = load_multiwoz_dataset('test', database=self.database, context_len=self.context_len,
+                                        root_cache_path=root_cache_path, domains=domains,
+                                        only_single_domain=self.only_single_domain, strip_domain=strip_domain)
 
-        print(f"EVALUATING MODEL ON {dataset_name} DONE!\n"
-              f"\t Total time: {time.time() - eval_start_time}")
+        old_train_df = train_df
 
-    print("=======================================================")
-    print(f"EVALUATING MODEL DONE!")
+        # Get the subset dataframe
+        train_df = get_dialogue_subset(train_df, subset_size)
+
+        # Print statistics
+        print_df_statistics(df=old_train_df, df_subset=train_df)
+
+        logging.info(f"Tokenizer: {self.tokenizer_name} with sep_token={self.tokenizer.sep_token}")
+        logging.info(f"Domains: {self.domains}")
+
+        # Create actions, count their support and filter the actions that have low support.
+        #   Count the occurrence of each action
+        action_counts = collections.Counter([action for example in train_df['actions'].to_list() for action in example])
+
+        #   Create a DataFrame from the action_counts dictionary
+        actions_df = pd.DataFrame(list(action_counts.items()), columns=['action', 'support'])
+        actions_df['supported'] = actions_df['support'] >= self.min_action_support
+        actions_df = actions_df.sort_values(by='support', ascending=False)
+
+        #   Specify the file path and save the DataFrame as CSV
+        # actions_path = Path(root_cache_path) / "action_supports.csv"
+        # actions_df.to_csv(actions_path, index=False)
+
+        #   Filter out actions with support less than the threshold
+        self.supported_actions = set(actions_df[actions_df['supported']]['action'].tolist())
+
+        # Create HuggingFace datasets
+        train_dataset = self.create_huggingface_dataset(train_df)
+        val_dataset = self.create_huggingface_dataset(val_df)
+        test_dataset = self.create_huggingface_dataset(test_df)
+
+        # Log number of truncated input and output examples
+        logging.info(f"Truncated inputs: {TRUNCATED_INPUTS}, truncated outputs: {TRUNCATED_OUTPUTS}")
+
+        # Create dataset dictionary
+        self.dataset = datasets.DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset,
+            'val': val_dataset}
+        )
+
+    def create_huggingface_dataset(self, df: pd.DataFrame) -> datasets.Dataset:
+        """
+        Creates HuggingFace dataset from pandas DataFrame
+        :param df: input DataFrame
+        :return: output HuggingFace dataset
+        """
+        # Create HuggingFace dataset from Dataset
+        dataset = datasets.Dataset.from_pandas(df)
+
+        # Map dataset using the 'tokenize_and_cast_function'
+        dataset = dataset.map(self.tokenize_and_cast_function, batched=True, batch_size=self.batch_size)
+
+        return dataset
+
+    def tokenize_and_cast_function(self, example_batch: Dict[str, Any]) -> Dict[
+        str, Union[List[str], List[int], np.ndarray]]:
+        global TRUNCATED_INPUTS, TRUNCATED_OUTPUTS
+
+        utterances = example_batch['utterance']
+
+        # Convert the belief states in the example batch into string format.
+        new_belief_states = list(map(belief_state_to_str, example_batch['new_belief_state']))
+
+        # Filter only those actions that are supported
+        filtered_actions = [[a for a in action if a in self.supported_actions] for action in example_batch['actions']]
+
+        # Convert action lists into a string format
+        actions = list(map(action_list_to_str, filtered_actions))
+
+        # Convert the database_results in the example batch into string format with counts
+        database_results_count = list(map(database_results_count_to_str, example_batch['database_results']))
+
+        # Convert the contexts in the example batch into string format, with elements joined by the separator token.
+        separator = CONTEXT_SEP
+        contexts = list(map(lambda x: separator.join(x), example_batch['context']))
+
+        texts = list(map(lambda belief, context, user_utter, db_results_count:
+                         TASK_DESCRIPTION_ACTION_GENERATION + ' ' + STATE_GEN + ' ' + belief + '. '
+                         + CONTEXT_GEN + ' ' + context + '. ' + USER_GEN + ' ' + user_utter + '. ' +
+                         DATABASE_COUNTS_GEN + ' ' + db_results_count,
+                         new_belief_states, contexts, utterances, database_results_count))
+
+        tokenized_inputs = self.tokenizer(texts, padding='max_length', truncation=True,
+                                          max_length=self.max_source_length, return_tensors="pt")
+
+        tokenized_outputs = self.tokenizer(actions, padding='max_length', truncation=True,
+                                           max_length=self.max_target_length, return_tensors="pt")
+
+        # Check if any input texts were truncated
+        truncated_texts = [text for text in texts if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_source_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of input truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_INPUTS += num_truncated
+
+        # Check if any output texts were truncated
+        truncated_texts = [text for text in actions if
+                           len(self.tokenizer(text, truncation=False)['input_ids']) > self.max_target_length]
+        num_truncated = len(truncated_texts)
+        if num_truncated > 0:
+            logging.warning(f"The number of output truncated texts is: {num_truncated}/ {len(texts)}")
+            TRUNCATED_OUTPUTS += num_truncated
+
+        # Get labels
+        labels = tokenized_outputs['input_ids']
+
+        # Replace padding token id's of the labels by -100, so it's ignored by the loss
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        return {
+            'input_ids': tokenized_inputs['input_ids'],
+            'attention_mask': tokenized_inputs['attention_mask'],
+            'labels': labels,
+            'new_belief_state': new_belief_states,
+        }
