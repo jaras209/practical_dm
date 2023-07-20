@@ -2,22 +2,16 @@ import logging
 import time
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Union
+from typing import List, Dict, Union
 
-import datasets
 import numpy as np
 import pandas as pd
 import torch
-from numpy import ndarray
-from sklearn.metrics import recall_score, precision_score, f1_score, accuracy_score
-from transformers import AutoModelForSequenceClassification, pipelines, Pipeline, T5ForConditionalGeneration
-from transformers.pipelines.base import KeyDataset
 
-from database import MultiWOZDatabase
-from metrics import compute_belief_state_metrics, compute_belief_state_exact_match_ratio
+from transformers import pipelines, T5ForConditionalGeneration
+
+from metrics import compute_belief_state_metrics
 from huggingface_multiwoz_dataset import MultiWOZDatasetBeliefUpdate, str_to_belief_state
-from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
-from accelerate import infer_auto_device_map
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)

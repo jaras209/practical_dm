@@ -13,72 +13,11 @@ from sklearn.metrics import recall_score, precision_score, f1_score, accuracy_sc
 from transformers import AutoModelForSequenceClassification, pipelines, Pipeline
 from transformers.pipelines.base import KeyDataset
 
-from database import MultiWOZDatabase
 from huggingface_multiwoz_dataset import MultiWOZDatasetActionsClassification
-from constants import DOMAIN_NAMES, OUTPUT_DF_COLUMNS
+from constants import OUTPUT_DF_COLUMNS
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 logging.basicConfig(level=logging.INFO)
-
-
-
-# TODO: rewrite this, action are now in the form of "restaurant-inform(name)" instead of "restaurant-inform-name"
-def create_dialogue_acts(predicted_labels: List[List[str]], dataset: datasets.Dataset, database: MultiWOZDatabase):
-    """
-    Create dialogue acts for the predicted labels by extending them with the corresponding output from the database query.
-
-    Args:
-        predicted_labels (List[List[str]]): A list of lists of predicted labels.
-        dataset (datasets.Dataset): The dataset containing the input dialogue elements.
-        database (MultiWOZDatabase): The database object with the query method.
-
-    Returns:
-        List[List[str]]: A list of lists of extended dialogue acts.
-    """
-    predicted_dialogue_acts = []
-    for i, (labels, dataset_element) in enumerate(zip(predicted_labels, dataset)):
-        belief_state = dataset_element['new_belief_state']
-
-        dialogue_acts = []
-        for label in labels:
-            if not label:
-                logging.debug(f'Empty label at index {i}')
-                dialogue_acts.append('')
-                continue
-
-            parts = label.split('-')
-
-            if len(parts) > 2:
-                domain, action, slot = parts[-3], parts[-2], parts[-1]
-            elif len(parts) == 2:
-                domain, action = parts[-2], parts[-1]
-                slot = None
-            else:
-                domain, action = parts[-1], None
-                slot = None
-
-            domain = domain.lower()
-
-            # Prepare base dialogue act
-            dialogue_act_base = f"{domain}-{action}"
-            dialogue_act = f"{dialogue_act_base}({slot})" if slot is not None else dialogue_act_base
-
-            if domain in DOMAIN_NAMES:
-                # Query the domain to get the full dialogue act.
-                query_result = database.query(domain, belief_state[domain])
-
-                # If query result is not None and slot exists, modify the dialogue act with result from query.
-                if query_result is not None and slot is not None:
-                    for result in query_result:
-                        if slot in result:
-                            dialogue_act = f"{dialogue_act_base}({slot}={result[slot]})"
-                            break
-
-            dialogue_acts.append(dialogue_act)
-
-        predicted_dialogue_acts.append(dialogue_acts)
-
-    return predicted_dialogue_acts
 
 
 def get_predictions(classifier_pipeline: Pipeline, dataset_data: datasets.Dataset) -> List[List[Dict[str, Any]]]:

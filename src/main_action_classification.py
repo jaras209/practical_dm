@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 
 from constants import SPECIAL_TOKENS
-from evaluate_action_prediction import evaluate
 from huggingface_multiwoz_dataset import MultiWOZDatasetActionsClassification
 from train_action_prediction import train
 
@@ -46,9 +45,9 @@ def main(args):
         trained_model_path = Path(args.model_root_path) / args.model_name_or_path
 
     # Evaluate the model
-    logging.info("Evaluating the model...")
-    evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
-    logging.info("Model evaluation complete. Results saved to files.")
+    # logging.info("Evaluating the model...")
+    # evaluate(multiwoz_dataset=action_prediction_dataset, model_path=trained_model_path)
+    # logging.info("Model evaluation complete. Results saved to files.")
 
 
 if __name__ == "__main__":
@@ -61,8 +60,8 @@ if __name__ == "__main__":
                         type=str,
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path",
-                        default="/home/safarjar/HCN/models/action_classification_30",
-                        # default="../../models/",
+                        # default="/home/safarjar/HCN/models/action_classification_30",
+                        default="../models/action_classification",
                         type=str,
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
@@ -95,8 +94,8 @@ if __name__ == "__main__":
                         choices=['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'precision_weighted',
                                  'recall_macro', 'recall_weighted'])
     parser.add_argument("--data_path",
-                        default="/home/safarjar/HCN/data/huggingface_data",
-                        # default="../../data/huggingface_data",
+                        # default="/home/safarjar/HCN/data/huggingface_data",
+                        default="../data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
     parser.add_argument("--domains", default=[], nargs='*')

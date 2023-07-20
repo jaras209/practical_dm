@@ -58,8 +58,8 @@ if __name__ == "__main__":
                         # default='flan-t5-base-finetuned-2023-06-27-10-23-50',
                         help="Name of the HuggingFace model or path from model_root_path to the pretrained model.")
     parser.add_argument("--model_root_path", type=str,
-                        default="/home/safar/HCN/models/action_generation",
-                        # default="../../models/belief_state_update",
+                        # default="/home/safar/HCN/models/action_generation",
+                        default="../models/action_generation",
                         help="Name of the folder where to save the model or where to load it from")
     parser.add_argument("--local_model", dest='local_model', action='store_true', default=False,
                         help="True indicates that we should load a locally saved model. False means that a HuggingFace "
@@ -92,8 +92,8 @@ if __name__ == "__main__":
                                  'f1-score_macro', 'precision_weighted', 'recall_weighted', 'f1-score_weighted',
                                  'exact_match_ratio'])
     parser.add_argument("--data_path",
-                        default="/home/safar/HCN/data/huggingface_data",
-                        # default="../../data/huggingface_data",
+                        # default="/home/safar/HCN/data/huggingface_data",
+                        default="../data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
     parser.add_argument("--domains", default=[], nargs='*')

@@ -91,7 +91,7 @@ def evaluate_models(df,
         state_metrics = compute_belief_state_metrics(references=state_reference_dicts,
                                                      predictions=state_predicted_dicts)
         state_metrics_df = pd.DataFrame.from_dict(state_metrics, orient='index')
-        save_dataframe(state_metrics_df, save_path, f'{dataset_name}_state_metrics.csv', False)
+        save_dataframe(state_metrics_df, save_path, f'{dataset_name}_state_metrics', False)
         logging.info("Dialogue state tracking model metrics saved")
         logging.info("Dialogue state tracking model evaluation finished\n\n")
     else:
@@ -167,7 +167,8 @@ def evaluate_models(df,
         # Make predictions with the action classification model
         logging.info("Computing predictions for action classification model")
         action_cla_predictions = action_cla_pipeline(action_cla_input_texts, batch_size=batch_size)
-        action_cla_predicted_lists = [[p['label'] for p in pred if p['score'] >= 0.5] for pred in action_cla_predictions]
+        action_cla_predicted_lists = [[p['label'] for p in pred if p['score'] >= 0.5] for pred in
+                                      action_cla_predictions]
         action_cla_reference_lists = df['actions'].tolist()
 
         # Compute metrics
@@ -224,33 +225,19 @@ def evaluate_models(df,
 
     save_dataframe(results_df_subset, save_path, f'{dataset_name}_results_subset')
 
-    # Create state tracking output data frame
-    if state_model_name_or_path is not None:
-        state_tracking_df = results_df[
-            ['dialogue_id', 'user_turn_id', 'system_turn_id', 'state_input', 'state_refe_text', 'state_pred_text',
-             'state_refe_dict', 'state_pred_dict']]
-        save_dataframe(state_tracking_df, save_path, f'{dataset_name}_state_tracking_results')
-
-    # Create action selection output data frame
-    if action_gen_model_name_or_path is not None or action_cla_model_name_or_path is not None:
-        action_selection_df = results_df[
-            ['dialogue_id', 'user_turn_id', 'system_turn_id', 'action_input', 'action_refe', 'action_gen_pred_list',
-             'action_cla_pred_list', 'action_gen_pred_da', 'action_cla_pred_da']]
-        save_dataframe(action_selection_df, save_path, f'{dataset_name}_action_selection_results')
-
     logging.info("Evaluation completed")
 
 
 def main():
     parser = argparse.ArgumentParser(description='Evaluate models')
     parser.add_argument('--state_model_name_or_path', type=str,
-                        default="../../models/belief_state_update/flan-t5-base-finetuned-2023-07-18-07-06-36",
+                        default="../models/state/flan-t5-base-finetuned-2023-07-19-18-27-52",
                         help='Path or name of the state model')
     parser.add_argument('--action_cla_model_name_or_path', type=str,
-                        default="../../models/models/action_classification/roberta-base-finetuned-2023-07-17-18-36-51",
+                        default="../models/action_classification/flan-t5-base-finetuned-2023-07-19-18-27-52",
                         help='Path or name of the action classification model')
     parser.add_argument('--action_gen_model_name_or_path', type=str,
-                        default="../../models/models/action_generation/flan-t5-base-finetuned-2023-07-18-21-00-58",
+                        default="../models/action_generation/flan-t5-base-finetuned-2023-07-19-18-27-52",
                         help='Path or name of the action generation model')
     parser.add_argument('--gen_tokenizer_name', type=str, default='google/flan-t5-base',
                         help='Name of the generation tokenizer')
@@ -261,12 +248,13 @@ def main():
     parser.add_argument('--max_target_length', type=int, default=230, help='Maximum target length')
     parser.add_argument('--use_predicted_states', type=bool, default=False,
                         help='Whether to use predicted belief states')
-    parser.add_argument('--save_path', type=str, default="../../results/test100/bla", help='Path to save the results')
+    parser.add_argument('--save_path', type=str, default="../results/test_all/ground_true_state",
+                        help='Path to save the results')
     parser.add_argument('--dataset_name', type=str, default='test', help='Name of the dataset')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed')
     parser.add_argument("--data_path",
-                        default="../../data/huggingface_data",
-                        # default="../../data/huggingface_data",
+                        # default="/home/safarjar/HCN/data/huggingface_data",
+                        default="../data",
                         type=str,
                         help="Name of the folder where to save extracted multiwoz dataset for faster preprocessing.")
 
@@ -278,7 +266,6 @@ def main():
 
     # Load your DataFrame here (df)
     test_df = load_multiwoz_dataset('test', database=database, root_cache_path=args.data_path)
-    print(test_df[test_df['utterance'] == "i need a place to dine in the center thats expensive"]['dialogue_id'])
 
     evaluate_models(test_df,
                     database=database,
